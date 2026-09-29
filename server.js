@@ -10,14 +10,36 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const cron = require('node-cron');
 const { parse: csvParse } = require('csv-parse/sync');
 
-// ── Marketing Data Store ───────────────────────────────────────────────────
-const MARKETING_DB = path.join(__dirname, 'data', 'marketing.json');
-function loadMarketing() {
-  if (!fs.existsSync(MARKETING_DB)) return { campaigns: [], contacts: [], businessProfile: {} };
-  try { return JSON.parse(fs.readFileSync(MARKETING_DB, 'utf8')); }
-  catch { return { campaigns: [], contacts: [], businessProfile: {} }; }
+// ── Data Storage Directory & Vercel Compatibility ────────────────────────
+const IS_VERCEL = !!process.env.VERCEL;
+const DATA_DIR = IS_VERCEL
+  ? path.join('/tmp', 'mymail_data')
+  : path.join(__dirname, 'data');
+
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+} catch (e) {
+  console.warn('Could not create DATA_DIR:', e.message);
 }
-function saveMarketing(data) { fs.writeFileSync(MARKETING_DB, JSON.stringify(data, null, 2)); }
+
+const MARKETING_DB = path.join(DATA_DIR, 'marketing.json');
+function loadMarketing() {
+  try {
+    if (!fs.existsSync(MARKETING_DB)) return { campaigns: [], contacts: [], businessProfile: {} };
+    return JSON.parse(fs.readFileSync(MARKETING_DB, 'utf8'));
+  } catch {
+    return { campaigns: [], contacts: [], businessProfile: {} };
+  }
+}
+function saveMarketing(data) {
+  try {
+    fs.writeFileSync(MARKETING_DB, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.warn('Could not save marketing DB:', e.message);
+  }
+}
 let marketingData = loadMarketing();
 
 // ── Free Provider Configurations ──────────────────────────────────────────
@@ -88,8 +110,8 @@ const FREE_PROVIDERS = {
 };
 
 const app = express();
-const PORT = 3500;
-const DB_PATH = path.join(__dirname, 'data', 'db.json');
+const PORT = process.env.PORT || 3500;
+const DB_PATH = path.join(DATA_DIR, 'db.json');
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -99,15 +121,24 @@ app.use(express.static(path.join(__dirname, 'public')));
 function loadDB() {
   try {
     if (!fs.existsSync(DB_PATH)) {
-      fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-      fs.writeFileSync(DB_PATH, JSON.stringify(defaultDB(), null, 2));
+      try {
+        fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+        fs.writeFileSync(DB_PATH, JSON.stringify(defaultDB(), null, 2));
+      } catch (err) {
+        console.warn('Could not write initial DB_PATH:', err.message);
+      }
+      return defaultDB();
     }
     return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
   } catch { return defaultDB(); }
 }
 
 function saveDB(db) {
-  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+  try {
+    fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+  } catch (err) {
+    console.warn('Could not save DB:', err.message);
+  }
 }
 
 function defaultDB() {
@@ -1028,7 +1059,7 @@ app.post('/api/marketing/campaigns/:id/send', express.json(), async (req, res) =
   const campaign = marketingData.campaigns.find(c => c.id === req.params.id);
   if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
-  const db = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'db.json'), 'utf8'));
+  const db = loadDB();
   const settings = db.settings || {};
 
   const contacts = campaign.contactIds.length > 0
@@ -1133,10 +1164,11 @@ async function sendEmailViaSettings(settings, { to, subject, text, html }) {
 }
 
 // ── Follow-up Cron (every hour, checks pending follow-ups) ─────────────────
-cron.schedule('0 * * * *', async () => {
-  const now = new Date();
-  let changed = false;
-  const db = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'db.json'), 'utf8'));
+if (!IS_VERCEL) {
+  cron.schedule('0 * * * *', async () => {
+    const now = new Date();
+    let changed = false;
+    const db = loadDB();
   const settings = db.settings || {};
 
   for (const campaign of marketingData.campaigns) {
@@ -1177,7 +1209,8 @@ cron.schedule('0 * * * *', async () => {
     }
   }
   if (changed) saveMarketing(marketingData);
-});
+  });
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AI CHATBOT — Full App Access
@@ -1189,10 +1222,7 @@ app.post('/api/chatbot', express.json(), async (req, res) => {
   if (!message) return res.status(400).json({ error: 'Message required' });
 
   // Gather all app context
-  const db = (() => {
-    try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'db.json'), 'utf8')); }
-    catch { return {}; }
-  })();
+  const db = loadDB();
 
   const settings = db.settings || {};
   const emailCache = db.emailCache || {};
@@ -1287,4 +1317,8 @@ app.use((req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.listen(PORT, () => console.log(`MyMail running → http://localhost:${PORT}`));
+if (require.main === module || !process.env.VERCEL) {
+  app.listen(PORT, () => console.log(`MyMail running → http://localhost:${PORT}`));
+}
+
+module.exports = app;
