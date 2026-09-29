@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Email Marketing — MyMail</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:#0d0f1a;--bg2:#131629;--bg3:#1a1f35;--bg4:#1f2540;
+      --border:rgba(255,255,255,.08);--border2:rgba(255,255,255,.14);
+      --text:#e8eaf6;--muted:#8b8fa8;
+      --accent:#6c63ff;--accent2:#a78bfa;--accent3:#38bdf8;
+      --success:#34d399;--warn:#fbbf24;--danger:#f87171;
+      --grad:linear-gradient(135deg,#6c63ff 0%,#a78bfa 50%,#38bdf8 100%);
+    }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+    .topnav{display:flex;align-items:center;gap:12px;padding:14px 24px;background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;}
+    .topnav a{color:var(--muted);text-decoration:none;font-size:13px;transition:color .2s;}
+    .topnav a:hover{color:var(--text);}
+    .logo{font-size:18px;font-weight:800;letter-spacing:-.5px;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-right:auto;}
+    .badge{background:linear-gradient(135deg,#6c63ff,#a78bfa);color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;letter-spacing:.5px;text-transform:uppercase;}
+    .layout{display:flex;height:calc(100vh - 57px);}
+    .sidebar{width:220px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);padding:16px 12px;display:flex;flex-direction:column;gap:4px;}
+    .sidebar-label{font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:1px;padding:8px 12px 4px;}
+    .nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:500;color:var(--muted);transition:all .15s;border:none;background:none;width:100%;text-align:left;}
+    .nav-item:hover{background:var(--bg3);color:var(--text);}
+    .nav-item.active{background:rgba(108,99,255,.18);color:var(--accent2);}
+    .nav-item .icon{font-size:16px;width:20px;text-align:center;}
+    .main{flex:1;overflow-y:auto;padding:28px 32px;}
+    .page-header{margin-bottom:28px;}
+    .page-header h1{font-size:22px;font-weight:700;margin-bottom:4px;}
+    .page-header p{font-size:13px;color:var(--muted);}
+    .card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:18px;}
+    .card-title{font-size:14px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+    .card-title .dot{width:8px;height:8px;border-radius:50%;background:var(--grad);}
+    .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+    .form-group{display:flex;flex-direction:column;gap:6px;}
+    .form-group.full{grid-column:1/-1;}
+    label{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+    input,textarea,select{background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-family:'Inter',sans-serif;font-size:13px;padding:10px 14px;outline:none;transition:border-color .2s,box-shadow .2s;resize:vertical;}
+    input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(108,99,255,.18);}
+    input::placeholder,textarea::placeholder{color:var(--muted);}
+    select option{background:var(--bg3);}
+    .btn{display:inline-flex;align-items:center;gap:7px;padding:10px 18px;border-radius:9px;border:none;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap;}
+    .btn-primary{background:var(--grad);color:#fff;}
+    .btn-primary:hover{opacity:.88;transform:translateY(-1px);box-shadow:0 4px 20px rgba(108,99,255,.4);}
+    .btn-secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border2);}
+    .btn-secondary:hover{background:var(--bg4);}
+    .btn-danger{background:rgba(248,113,113,.15);color:var(--danger);border:1px solid rgba(248,113,113,.2);}
+    .btn-success{background:rgba(52,211,153,.15);color:var(--success);border:1px solid rgba(52,211,153,.2);}
+    .btn:disabled{opacity:.45;cursor:not-allowed;transform:none!important;}
+    .btn-sm{padding:6px 12px;font-size:12px;border-radius:7px;}
+    .btn-xs{padding:4px 9px;font-size:11px;border-radius:6px;}
+    .tab-panel{display:none;}
+    .tab-panel.active{display:block;}
+    .ai-box{background:linear-gradient(135deg,rgba(108,99,255,.08) 0%,rgba(167,139,250,.08) 100%);border:1px solid rgba(108,99,255,.25);border-radius:14px;padding:22px;margin-bottom:18px;}
+    .ai-box-header{display:flex;align-items:center;gap:10px;margin-bottom:16px;}
+    .ai-icon{width:36px;height:36px;border-radius:10px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:18px;}
+    .preview-box{background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:16px;margin-top:14px;display:none;}
+    .preview-box.show{display:block;}
+    .preview-subject{font-size:13px;font-weight:700;margin-bottom:10px;color:var(--accent2);}
+    .preview-body{font-size:13px;line-height:1.7;white-space:pre-wrap;color:var(--text);}
+    .table-wrap{overflow-x:auto;border-radius:10px;border:1px solid var(--border);}
+    table{width:100%;border-collapse:collapse;font-size:13px;}
+    thead th{background:var(--bg3);padding:10px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);}
+    tbody tr{border-bottom:1px solid var(--border);transition:background .15s;}
+    tbody tr:last-child{border-bottom:none;}
+    tbody tr:hover{background:var(--bg3);}
+    td{padding:10px 14px;vertical-align:middle;}
+    .chip{display:inline-flex;align-items:center;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;}
+    .chip-green{background:rgba(52,211,153,.12);color:var(--success);}
+    .chip-red{background:rgba(248,113,113,.12);color:var(--danger);}
+    .chip-blue{background:rgba(56,189,248,.12);color:var(--accent3);}
+    .chip-purple{background:rgba(108,99,255,.12);color:var(--accent2);}
+    .campaign-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:12px;display:flex;gap:16px;align-items:flex-start;}
+    .camp-icon{width:42px;height:42px;border-radius:10px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;}
+    .camp-meta{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;}
+    .camp-actions{margin-left:auto;display:flex;flex-direction:column;gap:6px;align-items:flex-end;}
+    .stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px;}
+    .stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;}
+    .stat-card .val{font-size:26px;font-weight:800;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+    .stat-card .lbl{font-size:11px;color:var(--muted);margin-top:4px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;}
+    #toast{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;}
+    .toast-item{padding:12px 18px;border-radius:10px;font-size:13px;font-weight:500;backdrop-filter:blur(12px);pointer-events:auto;animation:slideIn .3s ease;max-width:320px;display:flex;align-items:center;gap:8px;}
+    .toast-item.success{background:rgba(52,211,153,.2);border:1px solid rgba(52,211,153,.35);color:var(--success);}
+    .toast-item.error{background:rgba(248,113,113,.2);border:1px solid rgba(248,113,113,.35);color:var(--danger);}
+    .toast-item.info{background:rgba(108,99,255,.2);border:1px solid rgba(108,99,255,.35);color:var(--accent2);}
+    @keyframes slideIn{from{transform:translateX(40px);opacity:0;}to{transform:translateX(0);opacity:1;}}
+    .spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    .key-row{display:flex;gap:10px;align-items:center;}
+    .key-row input{flex:1;font-family:monospace;}
+    .key-badge{padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;background:rgba(52,211,153,.15);color:var(--success);border:1px solid rgba(52,211,153,.2);}
+    .followup-tags{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+    .followup-tag{padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border2);background:var(--bg3);transition:all .15s;}
+    .followup-tag.selected{background:rgba(108,99,255,.2);border-color:var(--accent);color:var(--accent2);}
+    .drop-zone{border:2px dashed var(--border2);border-radius:10px;padding:28px;text-align:center;color:var(--muted);cursor:pointer;transition:all .2s;}
+    .drop-zone:hover,.drop-zone.drag-over{border-color:var(--accent);color:var(--accent2);background:rgba(108,99,255,.06);}
+    .drop-zone .dz-icon{font-size:28px;margin-bottom:8px;}
+    ::-webkit-scrollbar{width:6px;height:6px;}
+    ::-webkit-scrollbar-track{background:transparent;}
+    ::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:3px;}
+    @media(max-width:768px){.sidebar{display:none;}.form-grid{grid-template-columns:1fr;}.stats-row{grid-template-columns:1fr;}.main{padding:16px;}}
+  </style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="logo">✉ MyMail</span>
+  <a href="/">← Back to Inbox</a>
+  <span style="color:var(--border2)">|</span>
+  <span style="font-size:13px;font-weight:600;">AI Marketing</span>
+  <span class="badge">AI Powered</span>
+</nav>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-label">Marketing</div>
+    <button class="nav-item active" onclick="showTab('tab-dashboard')" id="nav-dashboard"><span class="icon">📊</span> Dashboard</button>
+    <button class="nav-item" onclick="showTab('tab-contacts')" id="nav-contacts"><span class="icon">👥</span> Contacts</button>
+    <button class="nav-item" onclick="showTab('tab-ai-writer')" id="nav-ai-writer"><span class="icon">🤖</span> AI Writer</button>
+    <button class="nav-item" onclick="showTab('tab-campaigns')" id="nav-campaigns"><span class="icon">📤</span> Campaigns</button>
+    <div class="sidebar-label" style="margin-top:12px;">Settings</div>
+    <button class="nav-item" onclick="showTab('tab-profile')" id="nav-profile"><span class="icon">🏢</span> Business Profile</button>
+    <button class="nav-item" onclick="showTab('tab-api')" id="nav-api"><span class="icon">🔑</span> API Keys</button>
+  </aside>
+  <main class="main">
+
+    <!-- DASHBOARD -->
+    <div class="tab-panel active" id="tab-dashboard">
+      <div class="page-header"><h1>📊 Marketing Dashboard</h1><p>Overview of your email marketing performance</p></div>
+      <div class="stats-row">
+        <div class="stat-card"><div class="val" id="stat-contacts">0</div><div class="lbl">Total Contacts</div></div>
+        <div class="stat-card"><div class="val" id="stat-campaigns">0</div><div class="lbl">Campaigns</div></div>
+        <div class="stat-card"><div class="val" id="stat-sent">0</div><div class="lbl">Emails Sent</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title"><div class="dot"></div> Recent Campaigns</div>
+        <div id="dash-campaigns"><p style="color:var(--muted);font-size:13px;">No campaigns yet. <button class="btn btn-secondary btn-sm" onclick="showTab('tab-ai-writer')" style="margin-left:8px;">Create your first →</button></p></div>
+      </div>
+      <div class="card" style="background:linear-gradient(135deg,rgba(108,99,255,.08),rgba(56,189,248,.05));border-color:rgba(108,99,255,.2);">
+        <div class="card-title"><div class="dot"></div> 🚀 Quick Start Guide</div>
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <div style="display:flex;gap:12px;align-items:flex-start;"><div style="width:24px;height:24px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;">1</div><div><strong style="font-size:13px;">Setup Business Profile</strong><br><span style="font-size:12px;color:var(--muted);">Tell the AI about your business, website and target audience.</span></div></div>
+          <div style="display:flex;gap:12px;align-items:flex-start;"><div style="width:24px;height:24px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;">2</div><div><strong style="font-size:13px;">Add Contacts</strong><br><span style="font-size:12px;color:var(--muted);">Import your contact list via CSV or add manually.</span></div></div>
+          <div style="display:flex;gap:12px;align-items:flex-start;"><div style="width:24px;height:24px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;">3</div><div><strong style="font-size:13px;">Generate Email with AI</strong><br><span style="font-size:12px;color:var(--muted);">Tell the AI what you want — it writes a humanized email instantly.</span></div></div>
+          <div style="display:flex;gap:12px;align-items:flex-start;"><div style="width:24px;height:24px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;">4</div><div><strong style="font-size:13px;">Launch Campaign + Auto Follow-up</strong><br><span style="font-size:12px;color:var(--muted);">Send to all contacts and schedule automatic follow-ups.</span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONTACTS -->
+    <div class="tab-panel" id="tab-contacts">
+      <div class="page-header"><h1>👥 Contacts</h1><p>Manage your email contact list</p></div>
+      <div style="display:flex;gap:12px;margin-bottom:18px;flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="openAddContact()">+ Add Contact</button>
+        <button class="btn btn-secondary" onclick="openImport()">📂 Import CSV</button>
+        <button class="btn btn-secondary" onclick="downloadSampleCSV()">⬇ Sample CSV</button>
+        <input type="text" id="contact-search" placeholder="Search contacts..." style="margin-left:auto;width:220px;" oninput="renderContacts()" />
+      </div>
+      <div class="card" id="add-contact-card" style="display:none;">
+        <div class="card-title"><div class="dot"></div> Add New Contact</div>
+        <div class="form-grid">
+          <div class="form-group"><label>Name</label><input type="text" id="new-name" placeholder="John Doe" /></div>
+          <div class="form-group"><label>Email *</label><input type="email" id="new-email" placeholder="john@company.com" /></div>
+          <div class="form-group"><label>Company</label><input type="text" id="new-company" placeholder="Acme Inc." /></div>
+          <div class="form-group" style="flex-direction:row;align-items:flex-end;gap:8px;">
+            <button class="btn btn-primary" onclick="addContact()" style="flex:1;">Add</button>
+            <button class="btn btn-secondary" onclick="document.getElementById('add-contact-card').style.display='none'">Cancel</button>
+          </div>
+        </div>
+      </div>
+      <div class="card" id="import-card" style="display:none;">
+        <div class="card-title"><div class="dot"></div> Import CSV</div>
+        <div class="drop-zone" id="drop-zone" onclick="document.getElementById('csv-file').click()" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="handleDrop(event)">
+          <div class="dz-icon">📄</div>
+          <p>Click or drag a CSV file here</p>
+          <small>Columns: name, email, company (email is required)</small>
+        </div>
+        <input type="file" id="csv-file" accept=".csv" style="display:none" onchange="handleFileInput(event)" />
+        <div style="margin-top:12px;text-align:center;color:var(--muted);font-size:12px;">— or paste CSV text —</div>
+        <textarea id="csv-paste" rows="5" placeholder="name,email,company&#10;Alice,alice@example.com,Acme" style="margin-top:10px;width:100%;"></textarea>
+        <div style="display:flex;gap:10px;margin-top:12px;">
+          <button class="btn btn-primary" onclick="importCSV()">Import</button>
+          <button class="btn btn-secondary" onclick="document.getElementById('import-card').style.display='none'">Cancel</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th><input type="checkbox" id="select-all" onchange="toggleSelectAll()" /></th><th>Name</th><th>Email</th><th>Company</th><th>Status</th><th>Added</th><th>Action</th></tr></thead>
+          <tbody id="contacts-tbody"><tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px;">No contacts yet</td></tr></tbody>
+        </table>
+      </div>
+      <div id="contact-count" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
+    </div>
+
+    <!-- AI WRITER -->
+    <div class="tab-panel" id="tab-ai-writer">
+      <div class="page-header"><h1>🤖 AI Email Writer</h1><p>Describe what you want — AI writes a humanized email for you</p></div>
+      <div class="ai-box">
+        <div class="ai-box-header">
+          <div class="ai-icon">✨</div>
+          <div><h3 style="font-size:15px;font-weight:700;">Powered by Gemini AI</h3><p style="font-size:12px;color:var(--muted);margin-top:2px;">Free at <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--accent3);">aistudio.google.com</a></p></div>
+        </div>
+        <div class="form-grid">
+          <div class="form-group full">
+            <label>🔑 Gemini API Key</label>
+            <div class="key-row">
+              <input type="password" id="gemini-key" placeholder="AIza..." />
+              <button class="btn btn-secondary btn-sm" onclick="saveGeminiKey()">Save</button>
+              <span class="key-badge" id="key-status" style="display:none">✓ Saved</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Email Type</label>
+            <select id="email-type">
+              <option value="cold outreach">Cold Outreach</option>
+              <option value="follow-up">Follow-up</option>
+              <option value="product announcement">Product Announcement</option>
+              <option value="promotional offer">Promotional Offer</option>
+              <option value="newsletter">Newsletter</option>
+              <option value="partnership proposal">Partnership Proposal</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Tone</label>
+            <select id="email-tone">
+              <option>Professional &amp; Warm</option>
+              <option>Casual &amp; Friendly</option>
+              <option>Urgent &amp; Direct</option>
+              <option>Storytelling</option>
+            </select>
+          </div>
+          <div class="form-group full">
+            <label>📝 Campaign Goal / Instructions</label>
+            <textarea id="ai-instruction" rows="4" placeholder="e.g. I want to reach out to digital agencies offering our video production services. Mention our recent work with top brands. Invite them for a free discovery call."></textarea>
+          </div>
+        </div>
+        <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn btn-primary" id="generate-btn" onclick="generateEmail()">✨ Generate Email</button>
+          <button class="btn btn-secondary" onclick="generateEmail()">🔄 Regenerate</button>
+        </div>
+        <div class="preview-box" id="preview-box">
+          <div class="preview-subject" id="preview-subject"></div>
+          <div class="preview-body" id="preview-body"></div>
+          <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;">
+            <button class="btn btn-success btn-sm" onclick="useDraftForCampaign()">📤 Use for Campaign</button>
+            <button class="btn btn-secondary btn-sm" onclick="copyToClipboard()">📋 Copy</button>
+          </div>
+        </div>
+      </div>
+      <div class="card" id="edit-card" style="display:none;">
+        <div class="card-title"><div class="dot"></div> Edit &amp; Personalize</div>
+        <div class="form-grid">
+          <div class="form-group full"><label>Subject Line</label><input type="text" id="edit-subject" placeholder="Email subject..." /></div>
+          <div class="form-group full"><label>Email Body (use {name} and {company} for personalization)</label><textarea id="edit-body" rows="12" placeholder="Email body..."></textarea></div>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="createCampaignFromEditor()">📤 Create Campaign</button>
+          <button class="btn btn-secondary" onclick="document.getElementById('edit-card').style.display='none'">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CAMPAIGNS -->
+    <div class="tab-panel" id="tab-campaigns">
+      <div class="page-header"><h1>📤 Campaigns</h1><p>Create, send and track your email campaigns</p></div>
+      <div class="card" id="create-camp-card">
+        <div class="card-title"><div class="dot"></div> Create New Campaign</div>
+        <div class="form-grid">
+          <div class="form-group full"><label>Campaign Name</label><input type="text" id="camp-name" placeholder="e.g. Summer Outreach 2024" /></div>
+          <div class="form-group full"><label>Subject Line</label><input type="text" id="camp-subject" placeholder="Your email subject..." /></div>
+          <div class="form-group full"><label>Email Body</label><textarea id="camp-body" rows="8" placeholder="Email body... Use {name} and {company} for personalization.&#10;&#10;Example:&#10;Hi {name},&#10;&#10;I noticed {company} has been growing fast..."></textarea></div>
+          <div class="form-group full">
+            <label>Auto Follow-up (days after sending)</label>
+            <div class="followup-tags">
+              <div class="followup-tag" onclick="toggleFollowup(this,3)">3 days</div>
+              <div class="followup-tag" onclick="toggleFollowup(this,5)">5 days</div>
+              <div class="followup-tag" onclick="toggleFollowup(this,7)">7 days</div>
+              <div class="followup-tag" onclick="toggleFollowup(this,14)">14 days</div>
+              <div class="followup-tag" onclick="toggleFollowup(this,21)">21 days</div>
+            </div>
+            <small style="color:var(--muted);font-size:11px;margin-top:4px;display:block;">Server must stay running for scheduled follow-ups to work</small>
+          </div>
+        </div>
+        <div style="margin-top:14px;"><button class="btn btn-primary" onclick="createCampaign()">💾 Save Campaign</button></div>
+      </div>
+      <div id="campaigns-list"></div>
+    </div>
+
+    <!-- BUSINESS PROFILE -->
+    <div class="tab-panel" id="tab-profile">
+      <div class="page-header"><h1>🏢 Business Profile</h1><p>Tell the AI about your business so it can write better emails</p></div>
+      <div class="card">
+        <div class="card-title"><div class="dot"></div> Your Business Details</div>
+        <div class="form-grid">
+          <div class="form-group"><label>Business Name</label><input type="text" id="biz-name" placeholder="Kinetic Studio" /></div>
+          <div class="form-group"><label>Website</label><input type="url" id="biz-website" placeholder="https://kineticstudio.site" /></div>
+          <div class="form-group full"><label>What You Do (1-2 sentences)</label><textarea id="biz-desc" rows="3" placeholder="We create high-quality motion graphics and video content for brands and agencies worldwide."></textarea></div>
+          <div class="form-group full"><label>Unique Value Proposition</label><textarea id="biz-value" rows="2" placeholder="Fast turnaround, cinematic quality, affordable pricing. Worked with 200+ brands."></textarea></div>
+          <div class="form-group full"><label>Target Audience</label><input type="text" id="biz-audience" placeholder="Digital marketing agencies, e-commerce brands, startups" /></div>
+          <div class="form-group"><label>Your Name / Sender</label><input type="text" id="biz-sender" placeholder="Khang / Kinetic Studio Team" /></div>
+          <div class="form-group"><label>Contact Email</label><input type="email" id="biz-contact" placeholder="hello@kineticstudio.site" /></div>
+        </div>
+        <button class="btn btn-primary" onclick="saveProfile()" style="margin-top:16px;">💾 Save Profile</button>
+      </div>
+    </div>
+
+    <!-- API KEYS -->
+    <div class="tab-panel" id="tab-api">
+      <div class="page-header"><h1>🔑 API Keys</h1><p>Configure your free AI and email service keys</p></div>
+      <div class="card">
+        <div class="card-title"><div class="dot"></div> Gemini AI (Free)</div>
+        <div class="form-group" style="margin-bottom:12px;">
+          <label>Gemini API Key</label>
+          <div class="key-row">
+            <input type="password" id="gemini-key-page" placeholder="AIza..." />
+            <button class="btn btn-secondary btn-sm" onclick="saveGeminiKeyPage()">Save</button>
+          </div>
+          <small style="color:var(--muted);font-size:11px;margin-top:6px;display:block;">Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--accent3);">aistudio.google.com/apikey</a> — 100% free, no credit card.</small>
+        </div>
+        <div style="background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.15);border-radius:8px;padding:12px;font-size:12px;color:var(--muted);">
+          ✅ <strong style="color:var(--success);">Gemini 1.5 Flash is free</strong> — 15 requests/min, 1M tokens/day. More than enough for email campaigns.
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><div class="dot"></div> Email Sending</div>
+        <p style="font-size:13px;color:var(--muted);">Email sending uses your settings from the main inbox. <a href="/" style="color:var(--accent3);">Go to Inbox Settings →</a></p>
+      </div>
+    </div>
+
+  </main>
+</div>
+<div id="toast"></div>
+<script>
+let contacts=[],campaigns=[],profile={},selectedFollowupDays=[],lastGenerated={subject:'',body:''};
+let geminiKey=localStorage.getItem('gemini_key')||'';
+
+document.addEventListener('DOMContentLoaded',()=>{
+  if(geminiKey){document.getElementById('gemini-key').value=geminiKey;document.getElementById('gemini-key-page').value=geminiKey;document.getElementById('key-status').style.display='inline-flex';}
+  loadAll();
+});
+
+async function loadAll(){await Promise.all([loadContacts(),loadCampaigns(),loadProfile()]);updateDashboard();}
+
+async function loadContacts(){try{const r=await fetch('/api/marketing/contacts');contacts=await r.json();renderContacts();}catch(e){console.error(e);}}
+async function loadCampaigns(){try{const r=await fetch('/api/marketing/campaigns');campaigns=await r.json();renderCampaigns();}catch(e){console.error(e);}}
+async function loadProfile(){
+  try{
+    const r=await fetch('/api/marketing/profile');profile=await r.json();
+    if(profile.businessName)document.getElementById('biz-name').value=profile.businessName;
+    if(profile.website)document.getElementById('biz-website').value=profile.website;
+    if(profile.description)document.getElementById('biz-desc').value=profile.description;
+    if(profile.valueProposition)document.getElementById('biz-value').value=profile.valueProposition;
+    if(profile.targetAudience)document.getElementById('biz-audience').value=profile.targetAudience;
+    if(profile.senderName)document.getElementById('biz-sender').value=profile.senderName;
+    if(profile.contactEmail)document.getElementById('biz-contact').value=profile.contactEmail;
+  }catch(e){console.error(e);}
+}
+
+function showTab(id){
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  const nid='nav-'+id.replace('tab-','');
+  const nel=document.getElementById(nid);
+  if(nel)nel.classList.add('active');
+}
+
+function updateDashboard(){
+  document.getElementById('stat-contacts').textContent=contacts.filter(c=>!c.unsubscribed).length;
+  document.getElementById('stat-campaigns').textContent=campaigns.length;
+  const total=campaigns.reduce((s,c)=>s+(c.stats?.sent||0),0);
+  document.getElementById('stat-sent').textContent=total;
+  const el=document.getElementById('dash-campaigns');
+  if(!campaigns.length){el.innerHTML='<p style="color:var(--muted);font-size:13px;">No campaigns yet. <button class="btn btn-secondary btn-sm" onclick="showTab(\'tab-ai-writer\')" style="margin-left:8px;">Create your first &rarr;</button></p>';return;}
+  el.innerHTML=[...campaigns].reverse().slice(0,3).map(c=>`
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+      <span style="font-size:20px;">${c.status==='sent'?'✅':c.status==='sending'?'⏳':'📝'}</span>
+      <div style="flex:1;"><div style="font-size:13px;font-weight:600;">${esc(c.name)}</div><div style="font-size:12px;color:var(--muted);">${esc(c.subject)} · ${fmtDate(c.createdAt)}</div></div>
+      <span class="chip ${schip(c.status)}">${c.status}</span>
+      <span style="font-size:12px;color:var(--muted);">${c.stats?.sent||0} sent</span>
+    </div>`).join('');
+}
+function schip(s){return s==='sent'?'chip-green':s==='sending'?'chip-blue':'chip-purple';}
+
+function renderContacts(){
+  const q=(document.getElementById('contact-search')?.value||'').toLowerCase();
+  const filtered=contacts.filter(c=>!q||c.name.toLowerCase().includes(q)||c.email.toLowerCase().includes(q)||(c.company||'').toLowerCase().includes(q));
+  const tbody=document.getElementById('contacts-tbody');
+  if(!filtered.length){tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px;">No contacts found</td></tr>';return;}
+  tbody.innerHTML=filtered.map(c=>`<tr>
+    <td><input type="checkbox" class="contact-check" value="${c.id}" /></td>
+    <td><strong>${esc(c.name)||'<span style="color:var(--muted)">—</span>'}</strong></td>
+    <td>${esc(c.email)}</td><td>${esc(c.company)||'<span style="color:var(--muted)">—</span>'}</td>
+    <td><span class="chip ${c.unsubscribed?'chip-red':'chip-green'}">${c.unsubscribed?'Unsub':'Active'}</span></td>
+    <td style="color:var(--muted);font-size:12px;">${fmtDate(c.addedAt)}</td>
+    <td><button class="btn btn-danger btn-xs" onclick="deleteContact('${c.id}')">🗑</button></td>
+  </tr>`).join('');
+  const total=contacts.length,active=contacts.filter(c=>!c.unsubscribed).length;
+  document.getElementById('contact-count').textContent=`${total} total · ${active} active · ${total-active} unsubscribed`;
+}
+
+function openAddContact(){const c=document.getElementById('add-contact-card');c.style.display=c.style.display==='none'?'block':'none';}
+function openImport(){const c=document.getElementById('import-card');c.style.display=c.style.display==='none'?'block':'none';}
+
+async function addContact(){
+  const name=document.getElementById('new-name').value.trim();
+  const email=document.getElementById('new-email').value.trim();
+  const company=document.getElementById('new-company').value.trim();
+  if(!email)return toast('Email is required','error');
+  try{
+    const r=await fetch('/api/marketing/contacts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,company})});
+    const d=await r.json();
+    if(!r.ok)return toast(d.error||'Error','error');
+    toast('Contact added: '+email,'success');
+    ['new-name','new-email','new-company'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('add-contact-card').style.display='none';
+    await loadContacts();updateDashboard();
+  }catch(e){toast('Network error','error');}
+}
+
+async function deleteContact(id){
+  if(!confirm('Delete this contact?'))return;
+  await fetch('/api/marketing/contacts/'+id,{method:'DELETE'});
+  toast('Contact deleted','info');await loadContacts();updateDashboard();
+}
+function toggleSelectAll(){const all=document.getElementById('select-all').checked;document.querySelectorAll('.contact-check').forEach(c=>c.checked=all);}
+function downloadSampleCSV(){
+  const s='name,email,company\nAlice Johnson,alice@example.com,Acme Corp\nBob Smith,bob@techco.io,TechCo\nCarla Gomez,carla@agency.com,Creative Agency';
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([s],{type:'text/csv'}));a.download='contacts_sample.csv';a.click();
+}
+function handleFileInput(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{document.getElementById('csv-paste').value=ev.target.result;};r.readAsText(f);}
+function handleDrop(e){e.preventDefault();document.getElementById('drop-zone').classList.remove('drag-over');const f=e.dataTransfer.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{document.getElementById('csv-paste').value=ev.target.result;};r.readAsText(f);}
+async function importCSV(){
+  const csv=document.getElementById('csv-paste').value.trim();
+  if(!csv)return toast('Paste or upload a CSV file first','error');
+  try{
+    const r=await fetch('/api/marketing/contacts/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({csv})});
+    const d=await r.json();
+    if(!r.ok)return toast(d.error||'Import error','error');
+    toast('Imported '+d.imported+' contacts ('+d.skipped+' skipped)','success');
+    document.getElementById('csv-paste').value='';document.getElementById('import-card').style.display='none';
+    await loadContacts();updateDashboard();
+  }catch(e){toast('Import failed','error');}
+}
+
+function saveGeminiKey(){
+  geminiKey=document.getElementById('gemini-key').value.trim();
+  if(!geminiKey)return toast('Enter your Gemini API key','error');
+  localStorage.setItem('gemini_key',geminiKey);
+  document.getElementById('gemini-key-page').value=geminiKey;
+  document.getElementById('key-status').style.display='inline-flex';
+  toast('Gemini API key saved!','success');
+}
+function saveGeminiKeyPage(){
+  geminiKey=document.getElementById('gemini-key-page').value.trim();
+  if(!geminiKey)return toast('Enter your Gemini API key','error');
+  localStorage.setItem('gemini_key',geminiKey);
+  document.getElementById('gemini-key').value=geminiKey;
+  document.getElementById('key-status').style.display='inline-flex';
+  toast('Gemini API key saved!','success');
+}
+
+async function generateEmail(){
+  const key=document.getElementById('gemini-key').value.trim()||geminiKey;
+  if(!key)return toast('Please enter your Gemini API key first','error');
+  const instruction=document.getElementById('ai-instruction').value.trim();
+  if(!instruction)return toast('Describe what you want to say in the campaign','error');
+  const btn=document.getElementById('generate-btn');
+  btn.innerHTML='<div class="spinner"></div> Generating...';btn.disabled=true;
+  const contactSample=contacts.find(c=>!c.unsubscribed)||null;
+  const biz={
+    businessName:document.getElementById('biz-name')?.value||profile.businessName,
+    website:document.getElementById('biz-website')?.value||profile.website,
+    description:document.getElementById('biz-desc')?.value||profile.description,
+    valueProposition:document.getElementById('biz-value')?.value||profile.valueProposition,
+    targetAudience:document.getElementById('biz-audience')?.value||profile.targetAudience,
+  };
+  try{
+    const r=await fetch('/api/marketing/ai/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({geminiKey:key,instruction,businessProfile:biz,contactSample,emailType:document.getElementById('email-type').value,tone:document.getElementById('email-tone').value})});
+    const d=await r.json();
+    if(!r.ok)return toast(d.error||'AI generation failed','error');
+    lastGenerated={subject:d.subject,body:d.body};
+    document.getElementById('preview-subject').textContent='📧 '+d.subject;
+    document.getElementById('preview-body').textContent=d.body;
+    document.getElementById('preview-box').classList.add('show');
+    document.getElementById('edit-subject').value=d.subject;
+    document.getElementById('edit-body').value=d.body;
+    document.getElementById('camp-subject').value=d.subject;
+    document.getElementById('camp-body').value=d.body;
+    toast('Email generated! Review and edit below.','success');
+  }catch(e){toast('Request failed: '+e.message,'error');}
+  finally{btn.innerHTML='✨ Generate Email';btn.disabled=false;}
+}
+
+function useDraftForCampaign(){document.getElementById('edit-card').style.display='block';document.getElementById('edit-card').scrollIntoView({behavior:'smooth'});}
+function copyToClipboard(){navigator.clipboard.writeText('Subject: '+lastGenerated.subject+'\n\n'+lastGenerated.body).then(()=>toast('Copied!','success'));}
+function createCampaignFromEditor(){
+  const subject=document.getElementById('edit-subject').value.trim();
+  const body=document.getElementById('edit-body').value.trim();
+  if(!subject||!body)return toast('Subject and body required','error');
+  document.getElementById('camp-subject').value=subject;document.getElementById('camp-body').value=body;
+  showTab('tab-campaigns');document.getElementById('create-camp-card').scrollIntoView({behavior:'smooth'});
+  toast('Loaded into campaign builder — review and send!','info');
+}
+
+function toggleFollowup(el,days){
+  el.classList.toggle('selected');
+  if(el.classList.contains('selected')){if(!selectedFollowupDays.includes(days))selectedFollowupDays.push(days);}
+  else{selectedFollowupDays=selectedFollowupDays.filter(d=>d!==days);}
+}
+
+async function createCampaign(){
+  const name=document.getElementById('camp-name').value.trim();
+  const subject=document.getElementById('camp-subject').value.trim();
+  const body=document.getElementById('camp-body').value.trim();
+  if(!subject||!body)return toast('Subject and body are required','error');
+  try{
+    const r=await fetch('/api/marketing/campaigns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,subject,body,followUpDays:selectedFollowupDays})});
+    const d=await r.json();if(!r.ok)return toast(d.error||'Error','error');
+    toast('Campaign saved!','success');document.getElementById('camp-name').value='';
+    await loadCampaigns();updateDashboard();
+  }catch(e){toast('Error: '+e.message,'error');}
+}
+
+async function sendCampaign(id){
+  const camp=campaigns.find(c=>c.id===id);if(!camp)return;
+  const active=contacts.filter(c=>!c.unsubscribed);
+  if(!confirm('Send "'+camp.name+'" to '+active.length+' contacts?'))return;
+  try{
+    const r=await fetch('/api/marketing/campaigns/'+id+'/send',{method:'POST',headers:{'Content-Type':'application/json'}});
+    const d=await r.json();if(!r.ok)return toast(d.error||'Send error','error');
+    toast(d.message||'Sending started!','info');
+    setTimeout(()=>{loadCampaigns();updateDashboard();},3000);
+  }catch(e){toast('Send error: '+e.message,'error');}
+}
+
+async function refreshCampaignStats(id){
+  try{
+    const r=await fetch('/api/marketing/campaigns/'+id+'/stats');
+    const d=await r.json();if(!r.ok)return;
+    await loadCampaigns();
+    toast('Stats: '+d.stats.sent+' sent, '+d.stats.failed+' failed, '+d.stats.followUpsSent+' follow-ups','info');
+  }catch(e){toast('Failed to load stats','error');}
+}
+
+function renderCampaigns(){
+  const el=document.getElementById('campaigns-list');if(!el)return;
+  if(!campaigns.length){el.innerHTML='<div class="card" style="text-align:center;color:var(--muted);"><p>No campaigns yet. Create one above or use AI Writer.</p></div>';return;}
+  el.innerHTML=[...campaigns].reverse().map(c=>`
+    <div class="campaign-card">
+      <div class="camp-icon">${c.status==='sent'?'✅':c.status==='sending'?'⏳':'📝'}</div>
+      <div style="flex:1;min-width:0;">
+        <h4 style="font-size:14px;font-weight:600;margin-bottom:3px;">${esc(c.name)}</h4>
+        <p style="font-size:12px;color:var(--muted);">${esc(c.subject)}</p>
+        <div class="camp-meta">
+          <span class="chip ${schip(c.status)}">${c.status}</span>
+          <span class="chip chip-blue">${c.stats?.sent||0} sent</span>
+          ${c.stats?.failed>0?'<span class="chip chip-red">'+c.stats.failed+' failed</span>':''}
+          ${(c.followUpDays||[]).length>0?'<span class="chip chip-purple">Follow-up: '+c.followUpDays.join(', ')+'d</span>':''}
+          <span style="font-size:11px;color:var(--muted);">${fmtDate(c.createdAt)}</span>
+        </div>
+      </div>
+      <div class="camp-actions">
+        <button class="btn btn-primary btn-sm" onclick="sendCampaign('${c.id}')">📤 Send</button>
+        <button class="btn btn-secondary btn-sm" onclick="refreshCampaignStats('${c.id}')">🔄 Stats</button>
+      </div>
+    </div>`).join('');
+}
+
+async function saveProfile(){
+  const d={businessName:document.getElementById('biz-name').value.trim(),website:document.getElementById('biz-website').value.trim(),description:document.getElementById('biz-desc').value.trim(),valueProposition:document.getElementById('biz-value').value.trim(),targetAudience:document.getElementById('biz-audience').value.trim(),senderName:document.getElementById('biz-sender').value.trim(),contactEmail:document.getElementById('biz-contact').value.trim()};
+  try{const r=await fetch('/api/marketing/profile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});profile=(await r.json()).profile;toast('Business profile saved!','success');}
+  catch(e){toast('Save failed','error');}
+}
+
+function toast(msg,type='info'){
+  const el=document.createElement('div');el.className='toast-item '+type;
+  el.innerHTML=(type==='success'?'✅':type==='error'?'❌':'ℹ️')+' '+msg;
+  document.getElementById('toast').appendChild(el);setTimeout(()=>el.remove(),4000);
+}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function fmtDate(iso){if(!iso)return'';try{return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch{return iso;}}
+</script>
+</body>
+</html>
