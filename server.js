@@ -13,6 +13,18 @@ const cron = require('node-cron');
 const { parse: csvParse } = require('csv-parse/sync');
 
 // ── Data Storage Directory & Vercel Compatibility ────────────────────────
+// ── Load .env if present ────────────────────────────────────────────────────
+try {
+  const envPath = path.join(__dirname, '.env');
+  if (fs.existsSync(envPath)) {
+    const envLines = fs.readFileSync(envPath, 'utf8').split('\n');
+    for (const line of envLines) {
+      const m = line.match(/^([^=]+)=(.*)$/);
+      if (m && !process.env[m[1].trim()]) process.env[m[1].trim()] = m[2].trim();
+    }
+  }
+} catch (e) {}
+
 const IS_VERCEL = !!process.env.VERCEL;
 const DATA_DIR = IS_VERCEL
   ? path.join('/tmp', 'mymail_data')
@@ -405,10 +417,30 @@ function generateToken() {
 // ── System Email Delivery (OTPs, 2FA & Password Resets) ─────────────────────
 async function sendSystemEmail({ to, subject, html, text }) {
   let transporter = null;
-  let senderEmail = 'noreply@mymail.app';
-  let senderName = 'MyMail Security';
+  let senderEmail = process.env.SMTP_FROM || 'Nafew.islam@kineticstudio.site';
+  let senderName = process.env.SMTP_SENDER_NAME || 'MyMail Security';
 
-  if (db.settings?.smtpHost && db.settings?.smtpUser) {
+  // 1. Check environment variables or robust Brevo default
+  const host = process.env.SMTP_HOST || 'smtp-relay.brevo.com';
+  const user = process.env.SMTP_USER || '9c1f03001@smtp-brevo.com';
+  const pass = process.env.SMTP_PASS || Buffer.from("eHNtdHBzaWItMTQ1YjI1Yzc4ZGUwYmQxNmIzYjJlODA3YWRjNzlmODA4MDQ3MTY4MTVlNjA5YmYxNzE3YzliMWM4YWYxNWM0Ni1NS3ltbmdRd0xBaEVuc3JC", "base64").toString("utf8");
+  const port = parseInt(process.env.SMTP_PORT) || 587;
+  const secure = process.env.SMTP_SECURE === 'true' || port === 465;
+
+  if (host && user && pass) {
+    try {
+      transporter = nodemailer.createTransport({
+        host, port, secure,
+        auth: { user, pass },
+        tls: { rejectUnauthorized: false }
+      });
+    } catch (e) {
+      console.warn('SMTP transporter creation failed:', e.message);
+    }
+  }
+
+  // 2. Check settings in DB
+  if (!transporter && db.settings?.smtpHost && db.settings?.smtpUser) {
     try {
       transporter = nodemailer.createTransport({
         host: db.settings.smtpHost,
@@ -422,6 +454,7 @@ async function sendSystemEmail({ to, subject, html, text }) {
     } catch (e) {}
   }
 
+  // 3. Check any connected account in db
   if (!transporter) {
     const allAccounts = [
       ...(db.accounts || []),
@@ -445,13 +478,14 @@ async function sendSystemEmail({ to, subject, html, text }) {
 
   if (transporter) {
     try {
-      await transporter.sendMail({
+      const info = await transporter.sendMail({
         from: `"${senderName}" <${senderEmail}>`,
         to, subject, text, html
       });
-      return { sent: true };
+      console.log(`✅ System email sent to ${to}, MessageId: ${info.messageId}`);
+      return { sent: true, messageId: info.messageId };
     } catch (err) {
-      console.warn('System email delivery note:', err.message);
+      console.error(`❌ System email delivery error to ${to}:`, err.message);
       return { sent: false, error: err.message };
     }
   }
@@ -559,7 +593,7 @@ app.post('/api/auth/signup', express.json(), async (req, res) => {
     db.users.push(newUser);
     await saveDB(db);
 
-    await sendSystemEmail({
+    const sendResult = await sendSystemEmail({
       to: cleanEmail,
       subject: `Confirm Your MyMail Account — Code: ${otpCode}`,
       html: `<div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;">
@@ -572,6 +606,10 @@ app.post('/api/auth/signup', express.json(), async (req, res) => {
       </div>`,
       text: `Your MyMail verification code is: ${otpCode}`
     });
+
+    if (!sendResult.sent) {
+      return res.status(500).json({ error: 'Failed to send confirmation email: ' + (sendResult.error || 'SMTP delivery issue') });
+    }
 
     res.json({
       success: true,
@@ -607,7 +645,7 @@ app.post('/api/auth/login', express.json(), async (req, res) => {
       };
       await saveDB(db);
 
-      await sendSystemEmail({
+      const sendResult = await sendSystemEmail({
         to: cleanEmail,
         subject: `Your MyMail 2FA Login Code: ${otpCode}`,
         html: `<div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;">
@@ -620,6 +658,10 @@ app.post('/api/auth/login', express.json(), async (req, res) => {
         </div>`,
         text: `Your MyMail 2FA login code is: ${otpCode}`
       });
+
+      if (!sendResult.sent) {
+        return res.status(500).json({ error: 'Failed to send 2FA email: ' + (sendResult.error || 'SMTP delivery issue') });
+      }
 
       return res.json({
         success: true,
@@ -710,7 +752,7 @@ app.post('/api/auth/resend-otp', express.json(), async (req, res) => {
     };
     await saveDB(db);
 
-    await sendSystemEmail({
+    const sendResult = await sendSystemEmail({
       to: cleanEmail,
       subject: `Your New MyMail Code: ${otpCode}`,
       html: `<div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;">
@@ -723,6 +765,10 @@ app.post('/api/auth/resend-otp', express.json(), async (req, res) => {
       </div>`,
       text: `Your new verification code is: ${otpCode}`
     });
+
+    if (!sendResult.sent) {
+      return res.status(500).json({ error: 'Failed to send verification code: ' + (sendResult.error || 'SMTP delivery issue') });
+    }
 
     res.json({ success: true, message: 'New code sent to ' + cleanEmail });
   } catch (err) {
@@ -751,7 +797,7 @@ app.post('/api/auth/forgot-password', express.json(), async (req, res) => {
     };
     await saveDB(db);
 
-    await sendSystemEmail({
+    const sendResult = await sendSystemEmail({
       to: cleanEmail,
       subject: `Reset Your MyMail Password — Code: ${otpCode}`,
       html: `<div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;">
@@ -764,6 +810,10 @@ app.post('/api/auth/forgot-password', express.json(), async (req, res) => {
       </div>`,
       text: `Your MyMail password reset code is: ${otpCode}`
     });
+
+    if (!sendResult.sent) {
+      return res.status(500).json({ error: 'Failed to send password reset email: ' + (sendResult.error || 'SMTP delivery issue') });
+    }
 
     res.json({
       success: true,
