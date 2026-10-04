@@ -1,4 +1,6 @@
 const express = require('express');
+const crypto = require('crypto');
+const { MongoClient } = require('mongodb');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
 const imapSimple = require('imap-simple');
@@ -133,16 +135,53 @@ function loadDB() {
   } catch { return defaultDB(); }
 }
 
-function saveDB(db) {
+// ── MongoDB Atlas Cloud Persistence ─────────────────────────────────────────
+let mongoDb = null;
+async function initMongo() {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) return;
   try {
-    fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+    const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
+    await client.connect();
+    mongoDb = client.db('mymail');
+    console.log('✅ Connected to MongoDB Atlas Cloud Database!');
+    const cloudState = await mongoDb.collection('app_state').findOne({ _id: 'global_state' });
+    if (cloudState && cloudState.db) {
+      if (cloudState.db.users) db.users = cloudState.db.users;
+      if (cloudState.db.accounts) db.accounts = cloudState.db.accounts;
+      if (cloudState.db.activeAccountId) db.activeAccountId = cloudState.db.activeAccountId;
+      if (cloudState.db.emailCache) db.emailCache = cloudState.db.emailCache;
+      if (cloudState.db.marketing) marketingData = cloudState.db.marketing;
+      console.log('✅ Loaded persistent database state from MongoDB Atlas!');
+    }
   } catch (err) {
-    console.warn('Could not save DB:', err.message);
+    console.warn('MongoDB connection notice:', err.message);
+  }
+}
+initMongo();
+
+async function saveDB(dbData) {
+  try {
+    fs.writeFileSync(DB_PATH, JSON.stringify(dbData, null, 2));
+  } catch (err) {
+    console.warn('Could not save DB to disk:', err.message);
+  }
+  if (mongoDb) {
+    try {
+      await mongoDb.collection('app_state').replaceOne(
+        { _id: 'global_state' },
+        { _id: 'global_state', db: dbData, marketing: marketingData, updatedAt: new Date().toISOString() },
+        { upsert: true }
+      );
+    } catch (mErr) {
+      console.warn('Could not save to MongoDB:', mErr.message);
+    }
   }
 }
 
 function defaultDB() {
   return {
+    users: [],
     accounts: [],
     activeAccountId: null,
     // Local cache of emails per account
@@ -345,11 +384,297 @@ function broadcast(type, payload) {
   for (const c of sseClients) c.write(`data: ${data}\n\n`);
 }
 
+// ── Auth Hashing & Session Helpers ──────────────────────────────────────────
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(password, storedHash) {
+  if (!storedHash || !storedHash.includes(':')) return false;
+  const [salt, originalHash] = storedHash.split(':');
+  const hash = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+  return hash === originalHash;
+}
+
+function generateToken() {
+  return 'mm_' + crypto.randomBytes(32).toString('hex');
+}
+
+// ── Multi-User Context Resolver (Isolates per-user data or falls back to demo) ─
+function getContext(req) {
+  const auth = req.headers.authorization;
+  let user = null;
+  if (auth && auth.startsWith('Bearer ')) {
+    const token = auth.substring(7).trim();
+    if (token && db.users) {
+      user = db.users.find(u => u.token === token) || null;
+    }
+  }
+
+  if (user) {
+    if (!user.accounts) user.accounts = [];
+    if (!user.emailCache) user.emailCache = {};
+    if (!user.drafts) user.drafts = {};
+    if (!user.contacts) user.contacts = {};
+    if (!user.marketing) user.marketing = { campaigns: [], contacts: [], businessProfile: {} };
+    if (!user.settings) user.settings = {};
+    return {
+      isAuth: true,
+      user,
+      get accounts() { return user.accounts; },
+      set accounts(val) { user.accounts = val; },
+      get activeAccountId() { return user.activeAccountId; },
+      set activeAccountId(id) { user.activeAccountId = id; },
+      get emailCache() { return user.emailCache; },
+      get drafts() { return user.drafts; },
+      get contacts() { return user.contacts; },
+      get marketing() { return user.marketing; },
+      get settings() { return user.settings; }
+    };
+  }
+
+  // Demo / Unauthenticated fallback
+  if (!db.accounts) db.accounts = [];
+  if (!db.emailCache) db.emailCache = {};
+  if (!db.drafts) db.drafts = {};
+  if (!db.contacts) db.contacts = {};
+  if (!db.settings) db.settings = {};
+  return {
+    isAuth: false,
+    user: null,
+    get accounts() { return db.accounts; },
+    set accounts(val) { db.accounts = val; },
+    get activeAccountId() { return db.activeAccountId; },
+    set activeAccountId(id) { db.activeAccountId = id; },
+    get emailCache() { return db.emailCache; },
+    get drafts() { return db.drafts; },
+    get contacts() { return db.contacts; },
+    get marketing() { return marketingData; },
+    get settings() { return db.settings; }
+  };
+}
+
+// ── AUTHENTICATION APIS ─────────────────────────────────────────────────────
+app.post('/api/auth/signup', express.json(), async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+    const emailStr = String(email || '').trim().toLowerCase();
+    if (!emailStr || !emailStr.includes('@') || !emailStr.includes('.')) {
+      return res.status(400).json({ error: 'Valid email address is required' });
+    }
+    if (!password || password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    if (!db.users) db.users = [];
+    if (db.users.some(u => u.email.toLowerCase() === cleanEmail)) {
+      return res.status(400).json({ error: 'An account with this email already exists. Please Sign In.' });
+    }
+
+    const token = generateToken();
+    const newUser = {
+      id: 'usr_' + Date.now(),
+      name: (name || cleanEmail.split('@')[0]).trim(),
+      email: cleanEmail,
+      passwordHash: hashPassword(password),
+      token,
+      createdAt: new Date().toISOString(),
+      accounts: [],
+      activeAccountId: null,
+      emailCache: {},
+      drafts: {},
+      contacts: {},
+      marketing: { campaigns: [], contacts: [], businessProfile: {} },
+      settings: { senderName: name || '', senderEmail: cleanEmail, geminiKey: '' }
+    };
+
+    db.users.push(newUser);
+    await saveDB(db);
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        createdAt: newUser.createdAt
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Signup error: ' + err.message });
+  }
+});
+
+app.post('/api/auth/login', express.json(), async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const user = db.users?.find(u => u.email.toLowerCase() === cleanEmail);
+    if (!user || !verifyPassword(password, user.passwordHash)) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    user.token = generateToken();
+    user.lastLogin = new Date().toISOString();
+    await saveDB(db);
+
+    res.json({
+      success: true,
+      token: user.token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        createdAt: user.createdAt
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Login error: ' + err.message });
+  }
+});
+
+app.get('/api/auth/me', (req, res) => {
+  const ctx = getContext(req);
+  if (!ctx.isAuth || !ctx.user) {
+    return res.json({ isAuth: false, user: null });
+  }
+  let totalEmails = 0;
+  try {
+    for (const f of Object.values(ctx.user.emailCache || {})) {
+      if (Array.isArray(f)) totalEmails += f.length;
+      else if (typeof f === 'object') {
+        for (const sub of Object.values(f)) if (Array.isArray(sub)) totalEmails += sub.length;
+      }
+    }
+  } catch (e) {}
+
+  res.json({
+    isAuth: true,
+    user: {
+      id: ctx.user.id,
+      name: ctx.user.name,
+      email: ctx.user.email,
+      createdAt: ctx.user.createdAt,
+      accountsCount: ctx.user.accounts?.length || 0,
+      activeAccountId: ctx.user.activeAccountId,
+      cachedEmailsCount: totalEmails,
+      contactsCount: ctx.user.marketing?.contacts?.length || 0,
+      campaignsCount: ctx.user.marketing?.campaigns?.length || 0,
+      hasMongo: !!mongoDb
+    }
+  });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const ctx = getContext(req);
+  if (ctx.user) {
+    ctx.user.token = null;
+    saveDB(db);
+  }
+  res.json({ success: true });
+});
+
+app.post('/api/auth/update-profile', express.json(), async (req, res) => {
+  const ctx = getContext(req);
+  if (!ctx.isAuth || !ctx.user) return res.status(401).json({ error: 'Unauthorized' });
+  const { name, currentPassword, newPassword } = req.body;
+  if (name) ctx.user.name = name.trim();
+  if (newPassword) {
+    if (!verifyPassword(currentPassword, ctx.user.passwordHash)) {
+      return res.status(400).json({ error: 'Current password is incorrect' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+    ctx.user.passwordHash = hashPassword(newPassword);
+  }
+  await saveDB(db);
+  res.json({ success: true, user: { id: ctx.user.id, name: ctx.user.name, email: ctx.user.email } });
+});
+
+// ── BACKUP & DATA LOSS PREVENTION APIS ──────────────────────────────────────
+app.get('/api/backup/export', (req, res) => {
+  const ctx = getContext(req);
+  const data = ctx.isAuth ? ctx.user : {
+    accounts: db.accounts,
+    emailCache: db.emailCache,
+    contacts: db.contacts,
+    marketing: marketingData,
+    settings: db.settings
+  };
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename=mymail-backup-${new Date().toISOString().slice(0,10)}.json`);
+  res.send(JSON.stringify(data, null, 2));
+});
+
+app.post('/api/backup/restore', express.json({ limit: '50mb' }), async (req, res) => {
+  const ctx = getContext(req);
+  const data = req.body;
+  if (!data || typeof data !== 'object') {
+    return res.status(400).json({ error: 'Invalid backup JSON' });
+  }
+
+  if (ctx.isAuth && ctx.user) {
+    if (data.accounts) ctx.user.accounts = data.accounts;
+    if (data.emailCache) ctx.user.emailCache = data.emailCache;
+    if (data.drafts) ctx.user.drafts = data.drafts;
+    if (data.contacts) ctx.user.contacts = data.contacts;
+    if (data.marketing) ctx.user.marketing = data.marketing;
+    if (data.settings) ctx.user.settings = data.settings;
+    if (data.activeAccountId) ctx.user.activeAccountId = data.activeAccountId;
+  } else {
+    if (data.accounts) db.accounts = data.accounts;
+    if (data.emailCache) db.emailCache = data.emailCache;
+    if (data.drafts) db.drafts = data.drafts;
+    if (data.contacts) db.contacts = data.contacts;
+    if (data.marketing) { marketingData = data.marketing; saveMarketing(marketingData); }
+    if (data.settings) db.settings = data.settings;
+  }
+  await saveDB(db);
+  res.json({ success: true, message: 'All data restored successfully!' });
+});
+
+// Self-healing vault sync
+app.post('/api/sync/vault', express.json({ limit: '20mb' }), async (req, res) => {
+  const ctx = getContext(req);
+  const { vault } = req.body;
+  if (!vault) return res.json({ status: 'ignored' });
+
+  if (ctx.isAuth && ctx.user) {
+    const hasData = (ctx.user.accounts && ctx.user.accounts.length > 0) ||
+                    (ctx.user.marketing?.contacts && ctx.user.marketing.contacts.length > 0);
+    // If server lost data due to serverless restart, restore from client vault!
+    if (!hasData && vault.accounts && vault.accounts.length > 0) {
+      ctx.user.accounts = vault.accounts;
+      ctx.user.emailCache = vault.emailCache || {};
+      ctx.user.contacts = vault.contacts || {};
+      ctx.user.marketing = vault.marketing || { campaigns: [], contacts: [], businessProfile: {} };
+      ctx.user.settings = vault.settings || {};
+      if (vault.activeAccountId) ctx.user.activeAccountId = vault.activeAccountId;
+      await saveDB(db);
+      return res.json({ status: 'restored_from_vault', message: 'Data auto-recovered from client vault!' });
+    }
+  }
+  res.json({ status: 'synced' });
+});
+
 // ── Account APIs ────────────────────────────────────────────────────────────
-app.get('/api/accounts', (req, res) => res.json(db.accounts));
+app.get('/api/accounts', (req, res) => {
+  const ctx = getContext(req);
+  res.json(ctx.accounts);
+});
 
 app.get('/api/accounts/active', (req, res) => {
-  const acc = db.accounts.find(a => a.id === db.activeAccountId);
+  const ctx = getContext(req);
+  const acc = ctx.accounts.find(a => a.id === ctx.activeAccountId);
   res.json(acc || null);
 });
 
@@ -370,17 +695,19 @@ app.post('/api/accounts', (req, res) => {
     isDemo: false,
     createdAt: new Date().toISOString()
   };
-  db.accounts.push(acc);
-  db.emailCache[acc.id] = { INBOX: [], Sent: [], Drafts: [], Trash: [], Spam: [] };
-  db.contacts[acc.id] = [];
-  if (db.accounts.length === 1) db.activeAccountId = acc.id;
+  const ctx = getContext(req);
+  ctx.accounts.push(acc);
+  ctx.emailCache[acc.id] = { INBOX: [], Sent: [], Drafts: [], Trash: [], Spam: [] };
+  ctx.contacts[acc.id] = [];
+  if (ctx.accounts.length === 1) ctx.activeAccountId = acc.id;
   saveDB(db);
   broadcast('account_added', { id: acc.id, email: acc.email });
   res.json({ success: true, account: acc });
 });
 
 app.put('/api/accounts/:id', (req, res) => {
-  const idx = db.accounts.findIndex(a => a.id === req.params.id);
+  const ctx = getContext(req);
+  const idx = ctx.accounts.findIndex(a => a.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Account not found' });
   if (req.body.email) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -388,23 +715,25 @@ app.put('/api/accounts/:id', (req, res) => {
       return res.status(400).json({ error: `"${req.body.email}" is not a valid email address. Please enter a full email like name@yourdomain.com.` });
     }
   }
-  db.accounts[idx] = { ...db.accounts[idx], ...req.body };
+  ctx.accounts[idx] = { ...ctx.accounts[idx], ...req.body };
   saveDB(db);
-  res.json({ success: true, account: db.accounts[idx] });
+  res.json({ success: true, account: ctx.accounts[idx] });
 });
 
 app.delete('/api/accounts/:id', (req, res) => {
-  db.accounts = db.accounts.filter(a => a.id !== req.params.id);
-  delete db.emailCache[req.params.id];
-  if (db.activeAccountId === req.params.id) {
-    db.activeAccountId = db.accounts[0]?.id || null;
+  const ctx = getContext(req);
+  ctx.accounts = ctx.accounts.filter(a => a.id !== req.params.id);
+  delete ctx.emailCache[req.params.id];
+  if (ctx.activeAccountId === req.params.id) {
+    ctx.activeAccountId = ctx.accounts[0]?.id || null;
   }
   saveDB(db);
   res.json({ success: true });
 });
 
 app.post('/api/accounts/:id/activate', (req, res) => {
-  db.activeAccountId = req.params.id;
+  const ctx = getContext(req);
+  ctx.activeAccountId = req.params.id;
   saveDB(db);
   res.json({ success: true });
 });
@@ -891,18 +1220,22 @@ app.get('/api/search/:accountId', (req, res) => {
 
 // ── Business Profile ────────────────────────────────────────────────────────
 app.get('/api/marketing/profile', (req, res) => {
-  res.json(marketingData.businessProfile || {});
+  const ctx = getContext(req);
+  res.json(ctx.marketing.businessProfile || {});
 });
 
 app.post('/api/marketing/profile', express.json(), (req, res) => {
-  marketingData.businessProfile = { ...marketingData.businessProfile, ...req.body };
-  saveMarketing(marketingData);
-  res.json({ ok: true, profile: marketingData.businessProfile });
+  const ctx = getContext(req);
+  ctx.marketing.businessProfile = { ...ctx.marketing.businessProfile, ...req.body };
+  if (ctx.isAuth) saveDB(db);
+  else saveMarketing(marketingData);
+  res.json({ ok: true, profile: ctx.marketing.businessProfile });
 });
 
 // ── Contacts ────────────────────────────────────────────────────────────────
 app.get('/api/marketing/contacts', (req, res) => {
-  res.json(marketingData.contacts || []);
+  const ctx = getContext(req);
+  res.json(ctx.marketing.contacts || []);
 });
 
 app.post('/api/marketing/contacts', express.json(), (req, res) => {
@@ -1028,7 +1361,8 @@ Subject: <subject here>
 
 // ── Campaigns ───────────────────────────────────────────────────────────────
 app.get('/api/marketing/campaigns', (req, res) => {
-  res.json(marketingData.campaigns || []);
+  const ctx = getContext(req);
+  res.json(ctx.marketing.campaigns || []);
 });
 
 app.post('/api/marketing/campaigns', express.json(), (req, res) => {

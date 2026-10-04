@@ -572,6 +572,10 @@ body { font-family: var(--font); font-size: 14px; color: var(--c-text); backgrou
         <circle cx="12" cy="12" r="3"/>
       </svg>
     </button>
+    <button class="auth-trigger-btn" id="authTriggerBtn" style="display:none;align-items:center;gap:6px;padding:6px 14px;border-radius:9px;border:1px solid rgba(26,115,232,.4);background:rgba(26,115,232,.1);color:var(--c-blue);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;" title="Sign In or Register">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+      Sign In
+    </button>
     <button class="avatar-btn" id="profileBtn" title="Account"></button>
     <a href="/marketing.html" title="AI Marketing" style="display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:9px;background:linear-gradient(135deg,#6c63ff,#a78bfa);color:#fff;font-size:12px;font-weight:700;text-decoration:none;letter-spacing:.3px;transition:opacity .2s;" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">🤖 AI Marketing</a>
   </div>
@@ -1265,6 +1269,223 @@ body { font-family: var(--font); font-size: 14px; color: var(--c-text); backgrou
   }
 })();
 </script>
+
+
+<!-- ── AUTH MODAL (SIGN IN / SIGN UP) ────────────────────────── -->
+<div class="settings-panel" id="authModal">
+  <div class="settings-card auth-card" style="max-width:440px;width:100%;">
+    <div class="settings-header" style="border-bottom:none;padding:24px 24px 12px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#1a73e8,#0f56c7);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:18px;">✉️</div>
+        <div>
+          <div style="font-family:var(--font-display);font-size:18px;font-weight:600;">MyMail Account</div>
+          <div style="font-size:12px;color:var(--c-text2);">Secure your emails, contacts & marketing data</div>
+        </div>
+      </div>
+      <button class="settings-close" id="authClose" style="margin-left:auto;">✕</button>
+    </div>
+
+    <!-- Auth Tabs -->
+    <div style="display:flex;border-bottom:1px solid var(--c-border);padding:0 24px;gap:20px;">
+      <button id="tabSignIn" style="padding:10px 0;background:none;border:none;border-bottom:2px solid var(--c-blue);font-weight:600;font-size:14px;color:var(--c-blue);cursor:pointer;">Sign In</button>
+      <button id="tabSignUp" style="padding:10px 0;background:none;border:none;border-bottom:2px solid transparent;font-weight:500;font-size:14px;color:var(--c-text2);cursor:pointer;">Create Account</button>
+    </div>
+
+    <div class="settings-body" style="padding:20px 24px;">
+      <!-- Error / Success banner -->
+      <div id="authAlert" style="display:none;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px;"></div>
+
+      <!-- Sign In Form -->
+      <form id="signInForm" style="display:flex;flex-direction:column;gap:14px;">
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          <input type="email" id="signInEmail" class="form-input" placeholder="you@domain.com" required autocomplete="username" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input type="password" id="signInPassword" class="form-input" placeholder="••••••••" required autocomplete="current-password" />
+        </div>
+        <button type="submit" id="signInSubmit" class="btn-filled" style="padding:12px;border-radius:8px;font-size:14px;font-weight:600;margin-top:6px;width:100%;">
+          Sign In
+        </button>
+        <div style="text-align:center;font-size:12px;color:var(--c-text2);margin-top:4px;">
+          Or continue in <a href="#" id="authDemoBtn" style="color:var(--c-blue);text-decoration:none;font-weight:600;">Demo / Guest Mode</a>
+        </div>
+      </form>
+
+      <!-- Sign Up Form -->
+      <form id="signUpForm" style="display:none;flex-direction:column;gap:14px;">
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input type="text" id="signUpName" class="form-input" placeholder="Nafew Islam" required autocomplete="name" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          <input type="email" id="signUpEmail" class="form-input" placeholder="you@domain.com" required autocomplete="username" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password (min 6 chars)</label>
+          <input type="password" id="signUpPassword" class="form-input" placeholder="••••••••" required minlength="6" autocomplete="new-password" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirm Password</label>
+          <input type="password" id="signUpConfirm" class="form-input" placeholder="••••••••" required minlength="6" autocomplete="new-password" />
+        </div>
+        <button type="submit" id="signUpSubmit" class="btn-filled" style="padding:12px;border-radius:8px;font-size:14px;font-weight:600;margin-top:6px;width:100%;background:linear-gradient(135deg,#1a73e8,#0f56c7);">
+          Create Account & Protect My Data
+        </button>
+      </form>
+
+      <!-- Security guarantee banner -->
+      <div style="margin-top:16px;padding:12px;border-radius:8px;background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.2);display:flex;align-items:flex-start;gap:8px;font-size:11px;color:var(--c-text2);line-height:1.4;">
+        <span style="font-size:14px;">🛡️</span>
+        <div><strong>Never-Lose-Data Protection:</strong> Your accounts, SMTP/IMAP credentials, emails, and marketing campaigns are encrypted and isolated to your user profile.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── ACCOUNT HUB MODAL ────────────────────────────────────── -->
+<div class="settings-panel" id="accountModal">
+  <div class="settings-card" style="max-width:620px;width:100%;max-height:88vh;">
+    <!-- Modal Header -->
+    <div class="settings-header" style="padding:20px 24px;border-bottom:1px solid var(--c-border);display:flex;align-items:center;gap:14px;">
+      <div id="accModalAvatar" style="width:48px;height:48px;border-radius:50%;background:#1a73e8;color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex-shrink:0;">
+        U
+      </div>
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div id="accModalName" style="font-size:17px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Demo User</div>
+          <span id="accModalBadge" style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;background:rgba(52,211,153,.15);color:#10b981;border:1px solid rgba(52,211,153,.3);">PROTECTED</span>
+        </div>
+        <div id="accModalEmail" style="font-size:13px;color:var(--c-text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">demo@mymail.app</div>
+      </div>
+      <button class="settings-close" id="accountModalClose">✕</button>
+    </div>
+
+    <!-- Inner Navigation Tabs -->
+    <div style="display:flex;border-bottom:1px solid var(--c-border);padding:0 24px;gap:20px;background:var(--c-surface2);">
+      <button id="accTabMailboxes" class="acc-tab-btn active" style="padding:11px 0;background:none;border:none;border-bottom:2px solid var(--c-blue);font-weight:600;font-size:13px;color:var(--c-blue);cursor:pointer;">📬 Mailboxes</button>
+      <button id="accTabData" class="acc-tab-btn" style="padding:11px 0;background:none;border:none;border-bottom:2px solid transparent;font-weight:500;font-size:13px;color:var(--c-text2);cursor:pointer;">🛡️ Data & Backup</button>
+      <button id="accTabSettings" class="acc-tab-btn" style="padding:11px 0;background:none;border:none;border-bottom:2px solid transparent;font-weight:500;font-size:13px;color:var(--c-text2);cursor:pointer;">⚙️ Profile & Security</button>
+    </div>
+
+    <!-- Modal Body -->
+    <div class="settings-body" style="padding:22px 24px;">
+
+      <!-- TAB 1: CONNECTED MAILBOXES -->
+      <div id="accViewMailboxes">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div>
+            <div style="font-size:14px;font-weight:600;">Connected Email Inboxes</div>
+            <div style="font-size:12px;color:var(--c-text2);">Manage SMTP / IMAP accounts associated with this profile</div>
+          </div>
+          <button id="accAddMailboxBtn" class="btn-filled" style="padding:6px 14px;font-size:12px;border-radius:6px;">+ Connect Mailbox</button>
+        </div>
+        <div id="accMailboxList" style="display:flex;flex-direction:column;gap:8px;">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+
+      <!-- TAB 2: DATA & BACKUP (NEVER LOSE DATA) -->
+      <div id="accViewData" style="display:none;flex-direction:column;gap:16px;">
+        <div style="font-size:14px;font-weight:600;display:flex;align-items:center;gap:6px;">
+          🛡️ Zero Data-Loss Vault & Storage
+        </div>
+
+        <!-- Protection Status Cards -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div style="padding:14px;border-radius:10px;background:var(--c-surface2);border:1px solid var(--c-border);">
+            <div style="font-size:11px;color:var(--c-text2);text-transform:uppercase;font-weight:600;">Browser Vault Mirror</div>
+            <div style="font-size:15px;font-weight:700;color:#10b981;margin-top:4px;">🟢 Active & In-Sync</div>
+            <div style="font-size:11px;color:var(--c-text2);margin-top:4px;">Auto-restores data if cloud server restarts</div>
+          </div>
+          <div style="padding:14px;border-radius:10px;background:var(--c-surface2);border:1px solid var(--c-border);">
+            <div style="font-size:11px;color:var(--c-text2);text-transform:uppercase;font-weight:600;">Storage Backend</div>
+            <div id="accStorageBackendLabel" style="font-size:15px;font-weight:700;color:var(--c-blue);margin-top:4px;">💾 Server DB + Local</div>
+            <div style="font-size:11px;color:var(--c-text2);margin-top:4px;">Safe JSON database with encryption</div>
+          </div>
+        </div>
+
+        <!-- Live Metrics -->
+        <div style="display:flex;align-items:center;justify-content:space-around;padding:12px;border-radius:10px;background:rgba(26,115,232,.06);border:1px solid rgba(26,115,232,.2);">
+          <div style="text-align:center;">
+            <div id="statMailboxes" style="font-size:18px;font-weight:800;color:var(--c-blue);">0</div>
+            <div style="font-size:11px;color:var(--c-text2);">Mailboxes</div>
+          </div>
+          <div style="width:1px;height:30px;background:var(--c-border);"></div>
+          <div style="text-align:center;">
+            <div id="statEmails" style="font-size:18px;font-weight:800;color:var(--c-blue);">0</div>
+            <div style="font-size:11px;color:var(--c-text2);">Cached Emails</div>
+          </div>
+          <div style="width:1px;height:30px;background:var(--c-border);"></div>
+          <div style="text-align:center;">
+            <div id="statContacts" style="font-size:18px;font-weight:800;color:var(--c-blue);">0</div>
+            <div style="font-size:11px;color:var(--c-text2);">Marketing Contacts</div>
+          </div>
+        </div>
+
+        <!-- 1-Click Backup Export & Import -->
+        <div style="border:1px solid var(--c-border);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px;">
+          <div>
+            <div style="font-size:13px;font-weight:600;">💾 Full Database Backup & Restore</div>
+            <div style="font-size:12px;color:var(--c-text2);">Export your complete email accounts, cache, and contacts to a secure JSON file anytime.</div>
+          </div>
+          <div style="display:flex;gap:10px;">
+            <button id="accDownloadBackupBtn" class="btn-filled" style="flex:1;padding:10px;font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px;border-radius:8px;">
+              📥 Download Backup (.json)
+            </button>
+            <label for="accRestoreFileInput" class="btn-text" style="flex:1;padding:10px;font-size:13px;border:1px solid var(--c-border);border-radius:8px;text-align:center;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+              📤 Restore Backup
+            </label>
+            <input type="file" id="accRestoreFileInput" accept=".json" style="display:none;" />
+          </div>
+        </div>
+
+        <!-- Cloud DB Guide note -->
+        <div style="padding:14px;border-radius:10px;background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.2);font-size:12px;color:var(--c-text2);line-height:1.5;">
+          <div style="font-weight:600;color:#a78bfa;margin-bottom:4px;">☁️ Permanent Vercel Cloud Database:</div>
+          To make your Vercel deployment permanently stored in the cloud for free:
+          Add <code>MONGODB_URI</code> to your Vercel Project Environment Variables (from free <a href="https://www.mongodb.com/cloud/atlas" target="_blank" style="color:var(--c-blue);">MongoDB Atlas</a>).
+        </div>
+      </div>
+
+      <!-- TAB 3: PROFILE SETTINGS -->
+      <div id="accViewSettings" style="display:none;flex-direction:column;gap:16px;">
+        <form id="accProfileForm" style="display:flex;flex-direction:column;gap:14px;">
+          <div class="form-group">
+            <label class="form-label">Display Name</label>
+            <input type="text" id="accEditName" class="form-input" required />
+          </div>
+          <div style="border-top:1px solid var(--c-border);margin:6px 0;padding-top:10px;">
+            <div style="font-size:13px;font-weight:600;margin-bottom:10px;">Change Password</div>
+            <div class="form-group" style="margin-bottom:10px;">
+              <label class="form-label">Current Password</label>
+              <input type="password" id="accCurrentPass" class="form-input" placeholder="Leave blank if not changing" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">New Password</label>
+              <input type="password" id="accNewPass" class="form-input" placeholder="Minimum 6 characters" minlength="6" />
+            </div>
+          </div>
+          <button type="submit" class="btn-filled" style="padding:10px 18px;border-radius:8px;font-weight:600;align-self:flex-start;">
+            Save Profile Changes
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal Footer -->
+    <div class="settings-footer" style="padding:14px 24px;border-top:1px solid var(--c-border);display:flex;align-items:center;justify-content:space-between;">
+      <span id="accFooterStatus" style="font-size:12px;color:var(--c-text2);">Logged in</span>
+      <div style="display:flex;gap:10px;">
+        <button id="accSignOutBtn" style="padding:8px 16px;border-radius:8px;border:1px solid var(--c-danger,#ef4444);background:rgba(239,68,68,.1);color:var(--c-danger,#ef4444);font-size:13px;font-weight:600;cursor:pointer;">
+          🚪 Sign Out
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script src="app.js"></script>
 </body>

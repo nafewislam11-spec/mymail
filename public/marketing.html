@@ -1,6 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <script>
+    // Automatically forward user auth token from localStorage
+    const _origFetch = window.fetch;
+    window.fetch = function(url, options = {}) {
+      const token = localStorage.getItem("mymail_token");
+      if (token) {
+        options.headers = options.headers || {};
+        if (options.headers instanceof Headers) {
+          if (!options.headers.has("Authorization")) options.headers.set("Authorization", "Bearer " + token);
+        } else if (Array.isArray(options.headers)) {
+          options.headers.push(["Authorization", "Bearer " + token]);
+        } else {
+          if (!options.headers["Authorization"]) options.headers["Authorization"] = "Bearer " + token;
+        }
+      }
+      return _origFetch(url, options);
+    };
+  </script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AI Email Marketing — MyMail</title>

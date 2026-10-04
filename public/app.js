@@ -7,6 +7,8 @@ const API = '';
 
 // ── Application State ────────────────────────────────────────────
 const state = {
+  currentUser: null,
+  token: localStorage.getItem('mymail_token') || null,
   accounts: [],
   activeAccountId: null,
   currentFolder: 'INBOX',
@@ -60,7 +62,10 @@ function senderEmail(fromStr) {
 // ── API Helpers ───────────────────────────────────────────────────
 async function apiFetch(url, opts = {}) {
   try {
-    const r = await fetch(API + url, { headers: { 'Content-Type': 'application/json' }, ...opts });
+    const token = localStorage.getItem('mymail_token');
+    const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const r = await fetch(API + url, { ...opts, headers });
     return await r.json();
   } catch (e) {
     return { error: e.message };
@@ -102,6 +107,39 @@ async function init() {
   hideLoading();
 }
 
+
+// ── Zero Data-Loss Vault (Browser Mirror & Self-Healing) ────────────────────
+const Vault = {
+  save() {
+    try {
+      const data = {
+        timestamp: Date.now(),
+        accounts: state.accounts,
+        activeAccountId: state.activeAccountId
+      };
+      localStorage.setItem('mymail_local_vault', JSON.stringify(data));
+    } catch (e) {}
+  },
+  async selfHeal() {
+    try {
+      const saved = localStorage.getItem('mymail_local_vault');
+      if (!saved) return;
+      const vault = JSON.parse(saved);
+      if (vault.accounts && vault.accounts.length > 0) {
+        const res = await apiFetch('/api/sync/vault', {
+          method: 'POST',
+          body: JSON.stringify({ vault })
+        });
+        if (res.status === 'restored_from_vault') {
+          console.log('✅ Self-healed user data from client vault!');
+        }
+      }
+    } catch (e) {
+      console.warn('Vault self-heal warning:', e);
+    }
+  }
+};
+
 // ── Account Management ────────────────────────────────────────────
 async function loadAccounts() {
   const res = await apiFetch('/api/accounts');
@@ -110,6 +148,7 @@ async function loadAccounts() {
   state.activeAccountId = active?.id || state.accounts[0]?.id || null;
   renderAccounts();
   updateProfileBtn();
+  Vault.save();
 }
 
 function renderAccounts() {
@@ -136,11 +175,30 @@ function renderAccounts() {
 }
 
 function updateProfileBtn() {
-  const acc = state.accounts.find(a => a.id === state.activeAccountId);
   const btn = document.getElementById('profileBtn');
-  if (acc) {
-    btn.style.background = acc.avatarColor || getAvatarColor(acc.email);
-    btn.textContent = getInitials(acc.name);
+  const authTrigger = document.getElementById('authTriggerBtn');
+  if (!btn) return;
+
+  if (state.currentUser) {
+    if (authTrigger) authTrigger.style.display = 'none';
+    btn.style.display = 'flex';
+    btn.style.background = getAvatarColor(state.currentUser.email);
+    btn.textContent = getInitials(state.currentUser.name);
+    btn.title = `${state.currentUser.name} (${state.currentUser.email})`;
+  } else {
+    if (authTrigger) authTrigger.style.display = 'inline-flex';
+    const acc = state.accounts.find(a => a.id === state.activeAccountId);
+    if (acc) {
+      btn.style.display = 'flex';
+      btn.style.background = acc.avatarColor || getAvatarColor(acc.email);
+      btn.textContent = getInitials(acc.name);
+      btn.title = `Guest Mode (${acc.email})`;
+    } else {
+      btn.style.display = 'flex';
+      btn.style.background = '#607d8b';
+      btn.textContent = '👤';
+      btn.title = 'Guest / Demo Mode';
+    }
   }
 }
 
@@ -1041,11 +1099,417 @@ document.getElementById('deleteAccountBtn').addEventListener('click', async () =
   else renderEmailList([]);
 });
 
-// Profile btn — open settings for active account
-document.getElementById('profileBtn').addEventListener('click', () => {
-  if (state.activeAccountId) openEditAccount(state.activeAccountId);
-  else openAddAccount();
+
+// ── Auth & Account Hub Controller ───────────────────────────────────────────
+async function checkAuth() {
+  const token = localStorage.getItem('mymail_token');
+  if (!token) {
+    state.currentUser = null;
+    updateProfileBtn();
+    return;
+  }
+  const res = await apiFetch('/api/auth/me');
+  if (res.isAuth && res.user) {
+    state.currentUser = res.user;
+  } else {
+    state.currentUser = null;
+    localStorage.removeItem('mymail_token');
+  }
+  updateProfileBtn();
+}
+
+function openAuthModal(tab = 'signin') {
+  const modal = document.getElementById('authModal');
+  if (!modal) return;
+  modal.classList.add('open');
+  switchAuthTab(tab);
+  hideAuthAlert();
+}
+
+function closeAuthModal() {
+  const modal = document.getElementById('authModal');
+  if (modal) modal.classList.remove('open');
+}
+
+function switchAuthTab(tab) {
+  const tabSignIn = document.getElementById('tabSignIn');
+  const tabSignUp = document.getElementById('tabSignUp');
+  const signInForm = document.getElementById('signInForm');
+  const signUpForm = document.getElementById('signUpForm');
+  hideAuthAlert();
+
+  if (tab === 'signin') {
+    tabSignIn.style.color = 'var(--c-blue)';
+    tabSignIn.style.borderBottom = '2px solid var(--c-blue)';
+    tabSignIn.style.fontWeight = '600';
+    tabSignUp.style.color = 'var(--c-text2)';
+    tabSignUp.style.borderBottom = '2px solid transparent';
+    tabSignUp.style.fontWeight = '500';
+    signInForm.style.display = 'flex';
+    signUpForm.style.display = 'none';
+  } else {
+    tabSignUp.style.color = 'var(--c-blue)';
+    tabSignUp.style.borderBottom = '2px solid var(--c-blue)';
+    tabSignUp.style.fontWeight = '600';
+    tabSignIn.style.color = 'var(--c-text2)';
+    tabSignIn.style.borderBottom = '2px solid transparent';
+    tabSignIn.style.fontWeight = '500';
+    signUpForm.style.display = 'flex';
+    signInForm.style.display = 'none';
+  }
+}
+
+function showAuthAlert(msg, isSuccess = false) {
+  const el = document.getElementById('authAlert');
+  if (!el) return;
+  el.style.display = 'block';
+  el.textContent = msg;
+  if (isSuccess) {
+    el.style.background = 'rgba(52,211,153,.15)';
+    el.style.border = '1px solid rgba(52,211,153,.3)';
+    el.style.color = '#10b981';
+  } else {
+    el.style.background = 'rgba(239,68,68,.12)';
+    el.style.border = '1px solid rgba(239,68,68,.25)';
+    el.style.color = '#ef4444';
+  }
+}
+
+function hideAuthAlert() {
+  const el = document.getElementById('authAlert');
+  if (el) el.style.display = 'none';
+}
+
+async function handleSignIn(e) {
+  e.preventDefault();
+  const email = document.getElementById('signInEmail').value.trim();
+  const password = document.getElementById('signInPassword').value;
+  const submitBtn = document.getElementById('signInSubmit');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Signing in...';
+
+  const res = await apiFetch('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password })
+  });
+
+  submitBtn.disabled = false;
+  submitBtn.textContent = 'Sign In';
+
+  if (res.success && res.token) {
+    localStorage.setItem('mymail_token', res.token);
+    state.currentUser = res.user;
+    closeAuthModal();
+    toast(`Welcome back, ${res.user.name}! 👋`);
+    await loadAccounts();
+    await loadEmails('INBOX');
+  } else {
+    showAuthAlert(res.error || 'Failed to sign in');
+  }
+}
+
+async function handleSignUp(e) {
+  e.preventDefault();
+  const name = document.getElementById('signUpName').value.trim();
+  const email = document.getElementById('signUpEmail').value.trim();
+  const password = document.getElementById('signUpPassword').value;
+  const confirm = document.getElementById('signUpConfirm').value;
+  const submitBtn = document.getElementById('signUpSubmit');
+
+  if (password !== confirm) {
+    showAuthAlert('Passwords do not match');
+    return;
+  }
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Creating account...';
+
+  const res = await apiFetch('/api/auth/signup', {
+    method: 'POST',
+    body: JSON.stringify({ name, email, password })
+  });
+
+  submitBtn.disabled = false;
+  submitBtn.textContent = 'Create Account & Protect My Data';
+
+  if (res.success && res.token) {
+    localStorage.setItem('mymail_token', res.token);
+    state.currentUser = res.user;
+    closeAuthModal();
+    toast(`Account created! Welcome, ${res.user.name} 🎉`);
+    await loadAccounts();
+    await loadEmails('INBOX');
+  } else {
+    showAuthAlert(res.error || 'Signup failed');
+  }
+}
+
+async function openAccountModal() {
+  const modal = document.getElementById('accountModal');
+  if (!modal) return;
+  modal.classList.add('open');
+  switchAccountTab('mailboxes');
+
+  const nameEl = document.getElementById('accModalName');
+  const emailEl = document.getElementById('accModalEmail');
+  const avatarEl = document.getElementById('accModalAvatar');
+  const badgeEl = document.getElementById('accModalBadge');
+  const footerStatus = document.getElementById('accFooterStatus');
+  const signOutBtn = document.getElementById('accSignOutBtn');
+
+  if (state.currentUser) {
+    nameEl.textContent = state.currentUser.name;
+    emailEl.textContent = state.currentUser.email;
+    avatarEl.style.background = getAvatarColor(state.currentUser.email);
+    avatarEl.textContent = getInitials(state.currentUser.name);
+    badgeEl.textContent = 'DATA PROTECTED';
+    badgeEl.style.background = 'rgba(52,211,153,.15)';
+    badgeEl.style.color = '#10b981';
+    footerStatus.textContent = `Signed in as ${state.currentUser.email}`;
+    signOutBtn.style.display = 'inline-block';
+    signOutBtn.textContent = '🚪 Sign Out';
+    signOutBtn.style.border = '1px solid #ef4444';
+    signOutBtn.style.background = 'rgba(239,68,68,.1)';
+    signOutBtn.style.color = '#ef4444';
+    const editName = document.getElementById('accEditName');
+    if (editName) editName.value = state.currentUser.name;
+  } else {
+    nameEl.textContent = 'Guest / Demo User';
+    emailEl.textContent = 'Stored locally in browser';
+    avatarEl.style.background = '#607d8b';
+    avatarEl.textContent = '👤';
+    badgeEl.textContent = 'GUEST MODE';
+    badgeEl.style.background = 'rgba(251,191,36,.15)';
+    badgeEl.style.color = '#f59e0b';
+    footerStatus.textContent = 'Not signed in';
+    signOutBtn.style.display = 'inline-block';
+    signOutBtn.textContent = '🔑 Sign In / Register';
+    signOutBtn.style.border = '1px solid var(--c-blue)';
+    signOutBtn.style.background = 'rgba(26,115,232,.1)';
+    signOutBtn.style.color = 'var(--c-blue)';
+    const editName = document.getElementById('accEditName');
+    if (editName) editName.value = 'Guest';
+  }
+
+  renderAccountModalMailboxes();
+  updateDataVaultStats();
+}
+
+function closeAccountModal() {
+  const modal = document.getElementById('accountModal');
+  if (modal) modal.classList.remove('open');
+}
+
+function switchAccountTab(tab) {
+  const btnMailboxes = document.getElementById('accTabMailboxes');
+  const btnData = document.getElementById('accTabData');
+  const btnSettings = document.getElementById('accTabSettings');
+
+  const viewMailboxes = document.getElementById('accViewMailboxes');
+  const viewData = document.getElementById('accViewData');
+  const viewSettings = document.getElementById('accViewSettings');
+
+  [btnMailboxes, btnData, btnSettings].forEach(b => {
+    b.style.color = 'var(--c-text2)';
+    b.style.borderBottom = '2px solid transparent';
+    b.style.fontWeight = '500';
+  });
+  [viewMailboxes, viewData, viewSettings].forEach(v => v.style.display = 'none');
+
+  if (tab === 'mailboxes') {
+    btnMailboxes.style.color = 'var(--c-blue)';
+    btnMailboxes.style.borderBottom = '2px solid var(--c-blue)';
+    btnMailboxes.style.fontWeight = '600';
+    viewMailboxes.style.display = 'block';
+  } else if (tab === 'data') {
+    btnData.style.color = 'var(--c-blue)';
+    btnData.style.borderBottom = '2px solid var(--c-blue)';
+    btnData.style.fontWeight = '600';
+    viewData.style.display = 'flex';
+  } else {
+    btnSettings.style.color = 'var(--c-blue)';
+    btnSettings.style.borderBottom = '2px solid var(--c-blue)';
+    btnSettings.style.fontWeight = '600';
+    viewSettings.style.display = 'flex';
+  }
+}
+
+function renderAccountModalMailboxes() {
+  const list = document.getElementById('accMailboxList');
+  if (!list) return;
+  if (state.accounts.length === 0) {
+    list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--c-text2);font-size:13px;">No mailboxes connected yet. Click "+ Connect Mailbox" to add one!</div>`;
+    return;
+  }
+  list.innerHTML = state.accounts.map(acc => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-radius:10px;border:1px solid ${acc.id === state.activeAccountId ? 'var(--c-blue)' : 'var(--c-border)'};background:${acc.id === state.activeAccountId ? 'rgba(26,115,232,.05)' : 'var(--c-surface2)'};">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="width:36px;height:36px;border-radius:50%;background:${acc.avatarColor || getAvatarColor(acc.email)};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;">
+          ${getInitials(acc.name)}
+        </div>
+        <div>
+          <div style="font-size:14px;font-weight:600;display:flex;align-items:center;gap:6px;">
+            ${esc(acc.name)}
+            ${acc.id === state.activeAccountId ? '<span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;background:rgba(26,115,232,.2);color:var(--c-blue)">ACTIVE</span>' : ''}
+          </div>
+          <div style="font-size:12px;color:var(--c-text2);">${esc(acc.email)} (${acc.emailProvider || 'Custom'})</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        ${acc.id !== state.activeAccountId ? `<button onclick="switchAccount('${acc.id}');closeAccountModal();" class="btn-text" style="padding:4px 10px;font-size:12px;border:1px solid var(--c-border);border-radius:6px;cursor:pointer;">Set Active</button>` : ''}
+        <button onclick="closeAccountModal();openEditAccount('${acc.id}');" class="btn-text" style="padding:4px 10px;font-size:12px;border:1px solid var(--c-border);border-radius:6px;cursor:pointer;">Settings</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function updateDataVaultStats() {
+  const statMail = document.getElementById('statMailboxes');
+  const statEmails = document.getElementById('statEmails');
+  const statContacts = document.getElementById('statContacts');
+  if (statMail) statMail.textContent = state.accounts.length;
+  if (statEmails) statEmails.textContent = state.emails.length;
+
+  try {
+    const contacts = await apiFetch('/api/marketing/contacts');
+    if (statContacts) statContacts.textContent = Array.isArray(contacts) ? contacts.length : 0;
+  } catch (e) {}
+
+  if (state.currentUser) {
+    const me = await apiFetch('/api/auth/me');
+    if (me.user) {
+      if (statEmails && me.user.cachedEmailsCount) statEmails.textContent = me.user.cachedEmailsCount;
+      if (statContacts && me.user.contactsCount !== undefined) statContacts.textContent = me.user.contactsCount;
+      const backendLabel = document.getElementById('accStorageBackendLabel');
+      if (backendLabel && me.user.hasMongo) {
+        backendLabel.textContent = '☁️ MongoDB Atlas Cloud';
+        backendLabel.style.color = '#10b981';
+      }
+    }
+  }
+}
+
+function downloadBackup() {
+  const token = localStorage.getItem('mymail_token');
+  const url = '/api/backup/export' + (token ? `?auth=${encodeURIComponent(token)}` : '');
+  window.open(url, '_blank');
+  toast('📥 Full backup JSON download started!');
+}
+
+async function handleRestoreFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const json = JSON.parse(text);
+    showLoading();
+    const res = await apiFetch('/api/backup/restore', {
+      method: 'POST',
+      body: JSON.stringify(json)
+    });
+    hideLoading();
+    if (res.success) {
+      toast('🎉 All data successfully restored!');
+      await loadAccounts();
+      await loadEmails('INBOX');
+      openAccountModal();
+    } else {
+      toast(`Restore error: ${res.error || 'Failed'}`);
+    }
+  } catch (err) {
+    hideLoading();
+    toast('Invalid backup file: ' + err.message);
+  }
+}
+
+async function handleProfileSave(e) {
+  e.preventDefault();
+  const name = document.getElementById('accEditName').value.trim();
+  const currentPassword = document.getElementById('accCurrentPass').value;
+  const newPassword = document.getElementById('accNewPass').value;
+
+  if (!state.currentUser) {
+    toast('Please Sign In to save profile changes');
+    openAuthModal('signin');
+    return;
+  }
+
+  const res = await apiFetch('/api/auth/update-profile', {
+    method: 'POST',
+    body: JSON.stringify({ name, currentPassword, newPassword })
+  });
+
+  if (res.success) {
+    toast('Profile updated successfully! ✅');
+    state.currentUser.name = res.user.name;
+    document.getElementById('accCurrentPass').value = '';
+    document.getElementById('accNewPass').value = '';
+    updateProfileBtn();
+    openAccountModal();
+  } else {
+    toast(res.error || 'Update failed');
+  }
+}
+
+async function signOut() {
+  if (!confirm('Are you sure you want to sign out?')) return;
+  await apiFetch('/api/auth/logout', { method: 'POST' });
+  localStorage.removeItem('mymail_token');
+  state.currentUser = null;
+  closeAccountModal();
+  toast('Signed out successfully');
+  await loadAccounts();
+  await loadEmails('INBOX');
+  updateProfileBtn();
+}
+
+// Header Profile & Auth Listeners
+const profileBtnEl = document.getElementById('profileBtn');
+if (profileBtnEl) {
+  profileBtnEl.addEventListener('click', () => {
+    openAccountModal();
+  });
+}
+
+const authTriggerEl = document.getElementById('authTriggerBtn');
+if (authTriggerEl) {
+  authTriggerEl.addEventListener('click', () => {
+    openAuthModal('signin');
+  });
+}
+
+// Auth modal listeners
+document.getElementById('authClose')?.addEventListener('click', closeAuthModal);
+document.getElementById('tabSignIn')?.addEventListener('click', () => switchAuthTab('signin'));
+document.getElementById('tabSignUp')?.addEventListener('click', () => switchAuthTab('signup'));
+document.getElementById('signInForm')?.addEventListener('submit', handleSignIn);
+document.getElementById('signUpForm')?.addEventListener('submit', handleSignUp);
+document.getElementById('authDemoBtn')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  closeAuthModal();
+  toast('Continuing in Demo / Guest mode');
 });
+
+// Account Hub modal listeners
+document.getElementById('accountModalClose')?.addEventListener('click', closeAccountModal);
+document.getElementById('accTabMailboxes')?.addEventListener('click', () => switchAccountTab('mailboxes'));
+document.getElementById('accTabData')?.addEventListener('click', () => switchAccountTab('data'));
+document.getElementById('accTabSettings')?.addEventListener('click', () => switchAccountTab('settings'));
+document.getElementById('accAddMailboxBtn')?.addEventListener('click', () => {
+  closeAccountModal();
+  openAddAccount();
+});
+document.getElementById('accDownloadBackupBtn')?.addEventListener('click', downloadBackup);
+document.getElementById('accRestoreFileInput')?.addEventListener('change', handleRestoreFile);
+document.getElementById('accProfileForm')?.addEventListener('submit', handleProfileSave);
+document.getElementById('accSignOutBtn')?.addEventListener('click', () => {
+  if (!state.currentUser) {
+    closeAccountModal();
+    openAuthModal('signin');
+  } else {
+    signOut();
+  }
+});
+
 
 // Simulate incoming email test
 window.simulateInboundEmail = async function() {
@@ -1092,7 +1556,9 @@ function setupEventListeners() {
 // ── Start App ─────────────────────────────────────────────────────
 async function init() {
   showLoading();
+  await checkAuth();
   await loadProviders();
+  await Vault.selfHeal();
   await loadAccounts();
   await loadEmails();
   setupEventListeners();
