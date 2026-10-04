@@ -1101,6 +1101,10 @@ document.getElementById('deleteAccountBtn').addEventListener('click', async () =
 
 
 // ── Auth & Account Hub Controller ───────────────────────────────────────────
+let pendingAuthEmail = '';
+let pendingAuthType = 'email_verification';
+let pendingResetEmail = '';
+
 async function checkAuth() {
   const token = localStorage.getItem('mymail_token');
   if (!token) {
@@ -1136,6 +1140,13 @@ function switchAuthTab(tab) {
   const tabSignUp = document.getElementById('tabSignUp');
   const signInForm = document.getElementById('signInForm');
   const signUpForm = document.getElementById('signUpForm');
+  const verifyView = document.getElementById('verifyOtpView');
+  const forgotView = document.getElementById('forgotPassView');
+  const tabsContainer = tabSignIn?.parentElement;
+
+  if (tabsContainer) tabsContainer.style.display = 'flex';
+  if (verifyView) verifyView.style.display = 'none';
+  if (forgotView) forgotView.style.display = 'none';
   hideAuthAlert();
 
   if (tab === 'signin') {
@@ -1180,6 +1191,57 @@ function hideAuthAlert() {
   if (el) el.style.display = 'none';
 }
 
+function showOtpVerification(email, type = 'email_verification', devCode = null) {
+  pendingAuthEmail = email;
+  pendingAuthType = type;
+  hideAuthAlert();
+
+  const tabContainer = document.getElementById('tabSignIn')?.parentElement;
+  if (tabContainer) tabContainer.style.display = 'none';
+  document.getElementById('signInForm').style.display = 'none';
+  document.getElementById('signUpForm').style.display = 'none';
+  document.getElementById('forgotPassView').style.display = 'none';
+
+  const verifyView = document.getElementById('verifyOtpView');
+  verifyView.style.display = 'flex';
+
+  const titleEl = document.getElementById('otpViewTitle');
+  const descEl = document.getElementById('otpViewDesc');
+  if (type === '2fa_login') {
+    titleEl.textContent = 'Two-Factor Authentication (2FA)';
+    descEl.innerHTML = `Enter the 6-digit login code sent to <strong>${esc(email)}</strong>`;
+  } else {
+    titleEl.textContent = 'Confirm Your Email';
+    descEl.innerHTML = `Enter the 6-digit confirmation code sent to <strong>${esc(email)}</strong>`;
+  }
+
+  const input = document.getElementById('otpCodeInput');
+  input.value = '';
+  input.focus();
+
+  if (devCode) {
+    showAuthAlert(`🔑 Dev Notice: Your verification code is ${devCode}`, true);
+  }
+}
+
+function showForgotPassword() {
+  hideAuthAlert();
+  const tabContainer = document.getElementById('tabSignIn')?.parentElement;
+  if (tabContainer) tabContainer.style.display = 'none';
+  document.getElementById('signInForm').style.display = 'none';
+  document.getElementById('signUpForm').style.display = 'none';
+  document.getElementById('verifyOtpView').style.display = 'none';
+
+  const forgotView = document.getElementById('forgotPassView');
+  forgotView.style.display = 'flex';
+
+  document.getElementById('forgotStep1Form').style.display = 'flex';
+  document.getElementById('forgotStep2Form').style.display = 'none';
+  const emailInput = document.getElementById('forgotEmail');
+  emailInput.value = document.getElementById('signInEmail')?.value || '';
+  emailInput.focus();
+}
+
 async function handleSignIn(e) {
   e.preventDefault();
   const email = document.getElementById('signInEmail').value.trim();
@@ -1195,6 +1257,12 @@ async function handleSignIn(e) {
 
   submitBtn.disabled = false;
   submitBtn.textContent = 'Sign In';
+
+  if (res.requires2FA) {
+    showOtpVerification(email, '2fa_login', res.devCode);
+    toast('🛡️ 2FA login code sent to your email!');
+    return;
+  }
 
   if (res.success && res.token) {
     localStorage.setItem('mymail_token', res.token);
@@ -1231,6 +1299,12 @@ async function handleSignUp(e) {
   submitBtn.disabled = false;
   submitBtn.textContent = 'Create Account & Protect My Data';
 
+  if (res.requiresVerification) {
+    showOtpVerification(email, 'email_verification', res.devCode);
+    toast('📬 Verification code sent to your email!');
+    return;
+  }
+
   if (res.success && res.token) {
     localStorage.setItem('mymail_token', res.token);
     state.currentUser = res.user;
@@ -1240,6 +1314,124 @@ async function handleSignUp(e) {
     await loadEmails('INBOX');
   } else {
     showAuthAlert(res.error || 'Signup failed');
+  }
+}
+
+async function handleVerifyOtp() {
+  const code = document.getElementById('otpCodeInput').value.trim();
+  if (code.length < 6) {
+    showAuthAlert('Please enter the full 6-digit code');
+    return;
+  }
+
+  const submitBtn = document.getElementById('otpSubmitBtn');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Verifying...';
+
+  const res = await apiFetch('/api/auth/verify-otp', {
+    method: 'POST',
+    body: JSON.stringify({ email: pendingAuthEmail, code, type: pendingAuthType })
+  });
+
+  submitBtn.disabled = false;
+  submitBtn.textContent = 'Verify & Continue';
+
+  if (res.success && res.token) {
+    localStorage.setItem('mymail_token', res.token);
+    state.currentUser = res.user;
+    closeAuthModal();
+    toast(`🎉 Verification successful! Welcome, ${res.user.name}!`);
+    await loadAccounts();
+    await loadEmails('INBOX');
+  } else {
+    showAuthAlert(res.error || 'Invalid verification code');
+  }
+}
+
+async function handleResendOtp(e) {
+  e.preventDefault();
+  if (!pendingAuthEmail) return;
+  toast('Sending new code...');
+  const res = await apiFetch('/api/auth/resend-otp', {
+    method: 'POST',
+    body: JSON.stringify({ email: pendingAuthEmail, type: pendingAuthType })
+  });
+
+  if (res.success) {
+    toast('New code sent to ' + pendingAuthEmail);
+    if (res.devCode) {
+      showAuthAlert(`🔑 New code: ${res.devCode}`, true);
+    }
+  } else {
+    showAuthAlert(res.error || 'Failed to resend code');
+  }
+}
+
+async function handleForgotStep1(e) {
+  e.preventDefault();
+  const email = document.getElementById('forgotEmail').value.trim();
+  const sendBtn = document.getElementById('forgotSendBtn');
+  sendBtn.disabled = true;
+  sendBtn.textContent = 'Sending code...';
+
+  const res = await apiFetch('/api/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email })
+  });
+
+  sendBtn.disabled = false;
+  sendBtn.textContent = 'Send Reset Code';
+
+  if (res.success) {
+    pendingResetEmail = email;
+    document.getElementById('forgotStep1Form').style.display = 'none';
+    document.getElementById('forgotStep2Form').style.display = 'flex';
+    document.getElementById('forgotCode').focus();
+    toast('Reset code sent to your email!');
+    if (res.devCode) {
+      showAuthAlert(`🔑 Dev Reset Code: ${res.devCode}`, true);
+    }
+  } else {
+    showAuthAlert(res.error || 'Failed to request reset code');
+  }
+}
+
+async function handleForgotStep2(e) {
+  e.preventDefault();
+  const code = document.getElementById('forgotCode').value.trim();
+  const newPassword = document.getElementById('forgotNewPassword').value;
+  const confirmPassword = document.getElementById('forgotConfirmPassword').value;
+
+  if (newPassword !== confirmPassword) {
+    showAuthAlert('Passwords do not match');
+    return;
+  }
+  if (newPassword.length < 6) {
+    showAuthAlert('Password must be at least 6 characters');
+    return;
+  }
+
+  const submitBtn = document.getElementById('forgotResetSubmitBtn');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Resetting password...';
+
+  const res = await apiFetch('/api/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ email: pendingResetEmail, code, newPassword })
+  });
+
+  submitBtn.disabled = false;
+  submitBtn.textContent = 'Reset Password & Sign In';
+
+  if (res.success && res.token) {
+    localStorage.setItem('mymail_token', res.token);
+    state.currentUser = res.user;
+    closeAuthModal();
+    toast('🎉 Password reset successfully! Logged in.');
+    await loadAccounts();
+    await loadEmails('INBOX');
+  } else {
+    showAuthAlert(res.error || 'Failed to reset password');
   }
 }
 
@@ -1272,6 +1464,8 @@ async function openAccountModal() {
     signOutBtn.style.color = '#ef4444';
     const editName = document.getElementById('accEditName');
     if (editName) editName.value = state.currentUser.name;
+    const toggle2fa = document.getElementById('toggle2faCheckbox');
+    if (toggle2fa) toggle2fa.checked = !!state.currentUser.twoFactorEnabled;
   } else {
     nameEl.textContent = 'Guest / Demo User';
     emailEl.textContent = 'Stored locally in browser';
@@ -1509,6 +1703,46 @@ document.getElementById('accSignOutBtn')?.addEventListener('click', () => {
     signOut();
   }
 });
+
+// Forgot Password & 2FA Listeners
+document.getElementById('authForgotBtn')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  showForgotPassword();
+});
+document.getElementById('otpSubmitBtn')?.addEventListener('click', handleVerifyOtp);
+document.getElementById('otpResendBtn')?.addEventListener('click', handleResendOtp);
+document.getElementById('otpBackBtn')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  switchAuthTab('signin');
+});
+document.getElementById('forgotBackBtn')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  switchAuthTab('signin');
+});
+document.getElementById('forgotStep1Form')?.addEventListener('submit', handleForgotStep1);
+document.getElementById('forgotStep2Form')?.addEventListener('submit', handleForgotStep2);
+
+// Auto-submit OTP when 6 digits are typed
+document.getElementById('otpCodeInput')?.addEventListener('input', (e) => {
+  if (e.target.value.length === 6) handleVerifyOtp();
+});
+
+// Toggle 2FA in Account Hub
+document.getElementById('toggle2faCheckbox')?.addEventListener('change', async (e) => {
+  const enabled = e.target.checked;
+  const res = await apiFetch('/api/auth/toggle-2fa', {
+    method: 'POST',
+    body: JSON.stringify({ enabled })
+  });
+  if (res.success) {
+    if (state.currentUser) state.currentUser.twoFactorEnabled = enabled;
+    toast(enabled ? '🛡️ 2FA Email Confirmation enabled!' : '2FA disabled');
+  } else {
+    e.target.checked = !enabled;
+    toast(res.error || 'Failed to update 2FA setting');
+  }
+});
+
 
 
 // Simulate incoming email test

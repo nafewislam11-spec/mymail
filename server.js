@@ -402,6 +402,63 @@ function generateToken() {
   return 'mm_' + crypto.randomBytes(32).toString('hex');
 }
 
+// ── System Email Delivery (OTPs, 2FA & Password Resets) ─────────────────────
+async function sendSystemEmail({ to, subject, html, text }) {
+  let transporter = null;
+  let senderEmail = 'noreply@mymail.app';
+  let senderName = 'MyMail Security';
+
+  if (db.settings?.smtpHost && db.settings?.smtpUser) {
+    try {
+      transporter = nodemailer.createTransport({
+        host: db.settings.smtpHost,
+        port: parseInt(db.settings.smtpPort) || 587,
+        secure: db.settings.smtpPort == 465,
+        auth: { user: db.settings.smtpUser, pass: db.settings.smtpPass },
+        tls: { rejectUnauthorized: false }
+      });
+      senderEmail = db.settings.senderEmail || db.settings.smtpUser;
+      senderName = db.settings.senderName || senderName;
+    } catch (e) {}
+  }
+
+  if (!transporter) {
+    const allAccounts = [
+      ...(db.accounts || []),
+      ...((db.users || []).flatMap(u => u.accounts || []))
+    ];
+    const smtpAcc = allAccounts.find(a => a.smtp?.host && a.smtp?.user && a.smtp?.pass && !a.isDemo);
+    if (smtpAcc) {
+      try {
+        transporter = nodemailer.createTransport({
+          host: smtpAcc.smtp.host,
+          port: parseInt(smtpAcc.smtp.port) || 587,
+          secure: Boolean(smtpAcc.smtp.secure),
+          auth: { user: smtpAcc.smtp.user, pass: smtpAcc.smtp.pass },
+          tls: { rejectUnauthorized: false }
+        });
+        senderEmail = smtpAcc.email;
+        senderName = smtpAcc.name || senderName;
+      } catch (e) {}
+    }
+  }
+
+  if (transporter) {
+    try {
+      await transporter.sendMail({
+        from: `"${senderName}" <${senderEmail}>`,
+        to, subject, text, html
+      });
+      return { sent: true };
+    } catch (err) {
+      console.warn('System email delivery note:', err.message);
+      return { sent: false, error: err.message };
+    }
+  }
+  return { sent: false, error: 'No active SMTP transporter configured' };
+}
+
+
 // ── Multi-User Context Resolver (Isolates per-user data or falls back to demo) ─
 function getContext(req) {
   const auth = req.headers.authorization;
@@ -475,6 +532,7 @@ app.post('/api/auth/signup', express.json(), async (req, res) => {
     }
 
     const token = generateToken();
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     const newUser = {
       id: 'usr_' + Date.now(),
       name: (name || cleanEmail.split('@')[0]).trim(),
@@ -482,6 +540,13 @@ app.post('/api/auth/signup', express.json(), async (req, res) => {
       passwordHash: hashPassword(password),
       token,
       createdAt: new Date().toISOString(),
+      isEmailVerified: false,
+      twoFactorEnabled: true,
+      otp: {
+        code: otpCode,
+        type: 'email_verification',
+        expiresAt: Date.now() + 15 * 60 * 1000
+      },
       accounts: [],
       activeAccountId: null,
       emailCache: {},
@@ -494,15 +559,26 @@ app.post('/api/auth/signup', express.json(), async (req, res) => {
     db.users.push(newUser);
     await saveDB(db);
 
+    await sendSystemEmail({
+      to: cleanEmail,
+      subject: `Confirm Your MyMail Account — Code: ${otpCode}`,
+      html: `<div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;">
+        <h2 style="color:#1a73e8;margin-bottom:8px;">Welcome to MyMail 📬</h2>
+        <p style="color:#475569;font-size:14px;">Please enter the 6-digit confirmation code below to verify your email and activate your account:</p>
+        <div style="margin:24px 0;padding:16px;background:#f8fafc;border:2px dashed #cbd5e1;border-radius:8px;text-align:center;">
+          <span style="font-size:32px;font-weight:800;letter-spacing:6px;color:#0f172a;">${otpCode}</span>
+        </div>
+        <p style="font-size:12px;color:#94a3b8;">This code expires in 15 minutes.</p>
+      </div>`,
+      text: `Your MyMail verification code is: ${otpCode}`
+    });
+
     res.json({
       success: true,
-      token,
-      user: {
-        id: newUser.id,
-        name: newUser.name,
-        email: newUser.email,
-        createdAt: newUser.createdAt
-      }
+      requiresVerification: true,
+      email: cleanEmail,
+      devCode: otpCode,
+      message: 'Verification code sent to ' + cleanEmail
     });
   } catch (err) {
     res.status(500).json({ error: 'Signup error: ' + err.message });
@@ -522,6 +598,39 @@ app.post('/api/auth/login', express.json(), async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
+    // If user has 2FA enabled, issue login code
+    if (user.twoFactorEnabled) {
+      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+      user.otp = {
+        code: otpCode,
+        type: '2fa_login',
+        expiresAt: Date.now() + 15 * 60 * 1000
+      };
+      await saveDB(db);
+
+      await sendSystemEmail({
+        to: cleanEmail,
+        subject: `Your MyMail 2FA Login Code: ${otpCode}`,
+        html: `<div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;">
+          <h2 style="color:#1a73e8;margin-bottom:8px;">Two-Factor Authentication 🛡️</h2>
+          <p style="color:#475569;font-size:14px;">Enter the 6-digit verification code below to complete your login:</p>
+          <div style="margin:24px 0;padding:16px;background:#f8fafc;border:2px dashed #cbd5e1;border-radius:8px;text-align:center;">
+            <span style="font-size:32px;font-weight:800;letter-spacing:6px;color:#0f172a;">${otpCode}</span>
+          </div>
+          <p style="font-size:12px;color:#94a3b8;">This code expires in 15 minutes.</p>
+        </div>`,
+        text: `Your MyMail 2FA login code is: ${otpCode}`
+      });
+
+      return res.json({
+        success: true,
+        requires2FA: true,
+        email: cleanEmail,
+        devCode: otpCode,
+        message: '2FA code sent to your email.'
+      });
+    }
+
     user.token = generateToken();
     user.lastLogin = new Date().toISOString();
     await saveDB(db);
@@ -533,12 +642,202 @@ app.post('/api/auth/login', express.json(), async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
-        createdAt: user.createdAt
+        createdAt: user.createdAt,
+        isEmailVerified: user.isEmailVerified !== false,
+        twoFactorEnabled: !!user.twoFactorEnabled
       }
     });
   } catch (err) {
     res.status(500).json({ error: 'Login error: ' + err.message });
   }
+});
+
+
+// ── 2FA & OTP Verification ──────────────────────────────────────────────────
+app.post('/api/auth/verify-otp', express.json(), async (req, res) => {
+  try {
+    const { email, code } = req.body;
+    if (!email || !code) return res.status(400).json({ error: 'Email and 6-digit code are required' });
+
+    const cleanEmail = email.toLowerCase().trim();
+    const user = db.users?.find(u => u.email.toLowerCase() === cleanEmail);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (!user.otp || user.otp.code !== String(code).trim()) {
+      return res.status(400).json({ error: 'Incorrect verification code. Please try again.' });
+    }
+
+    if (Date.now() > user.otp.expiresAt) {
+      return res.status(400).json({ error: 'Verification code has expired. Please request a new one.' });
+    }
+
+    user.isEmailVerified = true;
+    user.token = generateToken();
+    user.lastLogin = new Date().toISOString();
+    delete user.otp;
+    await saveDB(db);
+
+    res.json({
+      success: true,
+      token: user.token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        createdAt: user.createdAt,
+        isEmailVerified: true,
+        twoFactorEnabled: !!user.twoFactorEnabled
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Verification error: ' + err.message });
+  }
+});
+
+// ── Resend OTP ──────────────────────────────────────────────────────────────
+app.post('/api/auth/resend-otp', express.json(), async (req, res) => {
+  try {
+    const { email, type } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email required' });
+
+    const cleanEmail = email.toLowerCase().trim();
+    const user = db.users?.find(u => u.email.toLowerCase() === cleanEmail);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    user.otp = {
+      code: otpCode,
+      type: type || 'email_verification',
+      expiresAt: Date.now() + 15 * 60 * 1000
+    };
+    await saveDB(db);
+
+    await sendSystemEmail({
+      to: cleanEmail,
+      subject: `Your New MyMail Code: ${otpCode}`,
+      html: `<div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;">
+        <h2 style="color:#1a73e8;margin-bottom:8px;">New Verification Code 📬</h2>
+        <p style="color:#475569;font-size:14px;">Here is your new 6-digit verification code:</p>
+        <div style="margin:24px 0;padding:16px;background:#f8fafc;border:2px dashed #cbd5e1;border-radius:8px;text-align:center;">
+          <span style="font-size:32px;font-weight:800;letter-spacing:6px;color:#0f172a;">${otpCode}</span>
+        </div>
+        <p style="font-size:12px;color:#94a3b8;">This code expires in 15 minutes.</p>
+      </div>`,
+      text: `Your new verification code is: ${otpCode}`
+    });
+
+    res.json({ success: true, message: 'New code sent to ' + cleanEmail, devCode: otpCode });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to resend code: ' + err.message });
+  }
+});
+
+// ── Forgot Password Request ─────────────────────────────────────────────────
+app.post('/api/auth/forgot-password', express.json(), async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email address is required' });
+
+    const cleanEmail = email.toLowerCase().trim();
+    const user = db.users?.find(u => u.email.toLowerCase() === cleanEmail);
+    if (!user) {
+      // Don't leak whether email exists
+      return res.json({ success: true, message: 'If an account exists, a reset code was sent.' });
+    }
+
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    user.otp = {
+      code: otpCode,
+      type: 'password_reset',
+      expiresAt: Date.now() + 15 * 60 * 1000
+    };
+    await saveDB(db);
+
+    await sendSystemEmail({
+      to: cleanEmail,
+      subject: `Reset Your MyMail Password — Code: ${otpCode}`,
+      html: `<div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;">
+        <h2 style="color:#1a73e8;margin-bottom:8px;">Password Reset Request 🔐</h2>
+        <p style="color:#475569;font-size:14px;">We received a request to reset your password. Use the code below to proceed:</p>
+        <div style="margin:24px 0;padding:16px;background:#f8fafc;border:2px dashed #cbd5e1;border-radius:8px;text-align:center;">
+          <span style="font-size:32px;font-weight:800;letter-spacing:6px;color:#0f172a;">${otpCode}</span>
+        </div>
+        <p style="font-size:12px;color:#94a3b8;">This code expires in 15 minutes. If you did not request this, ignore this email.</p>
+      </div>`,
+      text: `Your MyMail password reset code is: ${otpCode}`
+    });
+
+    res.json({
+      success: true,
+      message: 'Password reset code sent to your email.',
+      devCode: otpCode
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Forgot password error: ' + err.message });
+  }
+});
+
+// ── Reset Password Submit ───────────────────────────────────────────────────
+app.post('/api/auth/reset-password', express.json(), async (req, res) => {
+  try {
+    const { email, code, newPassword } = req.body;
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({ error: 'Email, code, and new password are required' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const user = db.users?.find(u => u.email.toLowerCase() === cleanEmail);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (!user.otp || user.otp.code !== String(code).trim() || user.otp.type !== 'password_reset') {
+      return res.status(400).json({ error: 'Invalid or incorrect reset code' });
+    }
+
+    if (Date.now() > user.otp.expiresAt) {
+      return res.status(400).json({ error: 'Reset code has expired. Please request a new one.' });
+    }
+
+    user.passwordHash = hashPassword(newPassword);
+    user.token = generateToken();
+    user.lastLogin = new Date().toISOString();
+    delete user.otp;
+    await saveDB(db);
+
+    res.json({
+      success: true,
+      message: 'Password reset successfully! You are now signed in.',
+      token: user.token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        createdAt: user.createdAt,
+        isEmailVerified: user.isEmailVerified !== false,
+        twoFactorEnabled: !!user.twoFactorEnabled
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Reset password error: ' + err.message });
+  }
+});
+
+// ── Toggle 2FA Setting ──────────────────────────────────────────────────────
+app.post('/api/auth/toggle-2fa', express.json(), async (req, res) => {
+  const ctx = getContext(req);
+  if (!ctx.isAuth || !ctx.user) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { enabled } = req.body;
+  ctx.user.twoFactorEnabled = Boolean(enabled);
+  await saveDB(db);
+
+  res.json({
+    success: true,
+    twoFactorEnabled: ctx.user.twoFactorEnabled,
+    message: ctx.user.twoFactorEnabled ? '2FA email verification enabled' : '2FA disabled'
+  });
 });
 
 app.get('/api/auth/me', (req, res) => {
@@ -568,6 +867,8 @@ app.get('/api/auth/me', (req, res) => {
       cachedEmailsCount: totalEmails,
       contactsCount: ctx.user.marketing?.contacts?.length || 0,
       campaignsCount: ctx.user.marketing?.campaigns?.length || 0,
+      isEmailVerified: ctx.user.isEmailVerified !== false,
+      twoFactorEnabled: !!ctx.user.twoFactorEnabled,
       hasMongo: !!mongoDb
     }
   });

@@ -530,6 +530,19 @@ body { font-family: var(--font); font-size: 14px; color: var(--c-text); backgrou
 .skeleton-row { height: 54px; display: flex; align-items: center; gap: 16px; padding: 0 16px; border-bottom: 1px solid var(--c-border); }
 .sk-circle { width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0; }
 .sk-line { height: 14px; border-radius: 4px; }
+
+/* ── Switch Slider for 2FA Toggle ─────────────────────────── */
+.switch-slider {
+  position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #cbd5e1; transition: .3s; border-radius: 24px;
+}
+.switch-slider:before {
+  position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px;
+  background-color: white; transition: .3s; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,.3);
+}
+input:checked + .switch-slider { background-color: var(--c-blue); }
+input:checked + .switch-slider:before { transform: translateX(20px); }
+
 </style>
 </head>
 <body>
@@ -1302,7 +1315,10 @@ body { font-family: var(--font); font-size: 14px; color: var(--c-text); backgrou
           <input type="email" id="signInEmail" class="form-input" placeholder="you@domain.com" required autocomplete="username" />
         </div>
         <div class="form-group">
-          <label class="form-label">Password</label>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <label class="form-label">Password</label>
+            <a href="#" id="authForgotBtn" style="font-size:12px;color:var(--c-blue);text-decoration:none;font-weight:500;">Forgot Password?</a>
+          </div>
           <input type="password" id="signInPassword" class="form-input" placeholder="••••••••" required autocomplete="current-password" />
         </div>
         <button type="submit" id="signInSubmit" class="btn-filled" style="padding:12px;border-radius:8px;font-size:14px;font-weight:600;margin-top:6px;width:100%;">
@@ -1335,6 +1351,72 @@ body { font-family: var(--font); font-size: 14px; color: var(--c-text); backgrou
           Create Account & Protect My Data
         </button>
       </form>
+
+      
+      <!-- 2FA & Email Confirmation View -->
+      <div id="verifyOtpView" style="display:none;flex-direction:column;gap:14px;text-align:center;">
+        <div style="font-size:36px;margin-bottom:2px;">📬</div>
+        <div style="font-size:16px;font-weight:700;" id="otpViewTitle">Email Confirmation</div>
+        <div style="font-size:13px;color:var(--c-text2);" id="otpViewDesc">We sent a 6-digit confirmation code to your email.</div>
+        
+        <div class="form-group" style="margin-top:6px;">
+          <input type="text" id="otpCodeInput" class="form-input" maxlength="6" placeholder="123456" 
+                 style="font-size:24px;letter-spacing:6px;text-align:center;font-weight:700;font-family:monospace;padding:10px;" autocomplete="one-time-code" />
+        </div>
+        
+        <button id="otpSubmitBtn" class="btn-filled" style="padding:12px;border-radius:8px;font-size:14px;font-weight:600;width:100%;">
+          Verify & Continue
+        </button>
+
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--c-text2);margin-top:6px;">
+          <a href="#" id="otpResendBtn" style="color:var(--c-blue);text-decoration:none;font-weight:500;">Resend Code</a>
+          <a href="#" id="otpBackBtn" style="color:var(--c-text2);text-decoration:none;">Back to Sign In</a>
+        </div>
+      </div>
+
+      <!-- Forgot Password View -->
+      <div id="forgotPassView" style="display:none;flex-direction:column;gap:14px;">
+        <div style="text-align:center;">
+          <div style="font-size:32px;margin-bottom:4px;">🔐</div>
+          <div style="font-size:16px;font-weight:700;">Reset Your Password</div>
+          <div style="font-size:12px;color:var(--c-text2);margin-top:2px;">Enter your email to receive a 6-digit reset code</div>
+        </div>
+
+        <!-- Step 1: Request Code -->
+        <form id="forgotStep1Form" style="display:flex;flex-direction:column;gap:14px;">
+          <div class="form-group">
+            <label class="form-label">Your Account Email</label>
+            <input type="email" id="forgotEmail" class="form-input" placeholder="you@domain.com" required />
+          </div>
+          <button type="submit" id="forgotSendBtn" class="btn-filled" style="padding:12px;border-radius:8px;font-size:14px;font-weight:600;width:100%;">
+            Send Reset Code
+          </button>
+        </form>
+
+        <!-- Step 2: Enter Code & New Password -->
+        <form id="forgotStep2Form" style="display:none;flex-direction:column;gap:14px;">
+          <div class="form-group">
+            <label class="form-label">6-Digit Reset Code</label>
+            <input type="text" id="forgotCode" class="form-input" maxlength="6" placeholder="123456" 
+                   style="font-size:20px;letter-spacing:6px;text-align:center;font-weight:700;font-family:monospace;" required autocomplete="one-time-code" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">New Password (min 6 chars)</label>
+            <input type="password" id="forgotNewPassword" class="form-input" placeholder="••••••••" minlength="6" required autocomplete="new-password" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Confirm New Password</label>
+            <input type="password" id="forgotConfirmPassword" class="form-input" placeholder="••••••••" minlength="6" required autocomplete="new-password" />
+          </div>
+          <button type="submit" id="forgotResetSubmitBtn" class="btn-filled" style="padding:12px;border-radius:8px;font-size:14px;font-weight:600;width:100%;background:linear-gradient(135deg,#1a73e8,#0f56c7);">
+            Reset Password & Sign In
+          </button>
+        </form>
+
+        <div style="text-align:center;font-size:12px;margin-top:4px;">
+          <a href="#" id="forgotBackBtn" style="color:var(--c-blue);text-decoration:none;font-weight:500;">Back to Sign In</a>
+        </div>
+      </div>
 
       <!-- Security guarantee banner -->
       <div style="margin-top:16px;padding:12px;border-radius:8px;background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.2);display:flex;align-items:flex-start;gap:8px;font-size:11px;color:var(--c-text2);line-height:1.4;">
@@ -1468,6 +1550,24 @@ body { font-family: var(--font); font-size: 14px; color: var(--c-text); backgrou
               <input type="password" id="accNewPass" class="form-input" placeholder="Minimum 6 characters" minlength="6" />
             </div>
           </div>
+          
+          <!-- 2FA Setting Section -->
+          <div style="border-top:1px solid var(--c-border);margin:10px 0;padding-top:14px;">
+            <div style="font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+              🛡️ Two-Factor Authentication (2FA)
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-radius:10px;background:var(--c-surface2);border:1px solid var(--c-border);">
+              <div>
+                <div style="font-size:13px;font-weight:600;">Email Confirmation on Login</div>
+                <div style="font-size:11px;color:var(--c-text2);">Require a 6-digit confirmation code sent to your email whenever you sign in</div>
+              </div>
+              <label style="position:relative;display:inline-block;width:44px;height:24px;margin-left:14px;flex-shrink:0;">
+                <input type="checkbox" id="toggle2faCheckbox" style="opacity:0;width:0;height:0;" />
+                <span class="switch-slider"></span>
+              </label>
+            </div>
+          </div>
+
           <button type="submit" class="btn-filled" style="padding:10px 18px;border-radius:8px;font-weight:600;align-self:flex-start;">
             Save Profile Changes
           </button>
