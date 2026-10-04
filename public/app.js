@@ -1191,7 +1191,7 @@ function hideAuthAlert() {
   if (el) el.style.display = 'none';
 }
 
-function showOtpVerification(email, type = 'email_verification', devCode = null) {
+function showOtpVerification(email, type = 'email_verification') {
   pendingAuthEmail = email;
   pendingAuthType = type;
   hideAuthAlert();
@@ -1219,9 +1219,7 @@ function showOtpVerification(email, type = 'email_verification', devCode = null)
   input.value = '';
   input.focus();
 
-  if (devCode) {
-    showAuthAlert(`🔑 Dev Notice: Your verification code is ${devCode}`, true);
-  }
+  // Code is sent only to recipient's email inbox
 }
 
 function showForgotPassword() {
@@ -1259,7 +1257,7 @@ async function handleSignIn(e) {
   submitBtn.textContent = 'Sign In';
 
   if (res.requires2FA) {
-    showOtpVerification(email, '2fa_login', res.devCode);
+    showOtpVerification(email, '2fa_login');
     toast('🛡️ 2FA login code sent to your email!');
     return;
   }
@@ -1300,7 +1298,7 @@ async function handleSignUp(e) {
   submitBtn.textContent = 'Create Account & Protect My Data';
 
   if (res.requiresVerification) {
-    showOtpVerification(email, 'email_verification', res.devCode);
+    showOtpVerification(email, 'email_verification');
     toast('📬 Verification code sent to your email!');
     return;
   }
@@ -1359,9 +1357,7 @@ async function handleResendOtp(e) {
 
   if (res.success) {
     toast('New code sent to ' + pendingAuthEmail);
-    if (res.devCode) {
-      showAuthAlert(`🔑 New code: ${res.devCode}`, true);
-    }
+    toast('Verification code sent to your email!');
   } else {
     showAuthAlert(res.error || 'Failed to resend code');
   }
@@ -1388,9 +1384,7 @@ async function handleForgotStep1(e) {
     document.getElementById('forgotStep2Form').style.display = 'flex';
     document.getElementById('forgotCode').focus();
     toast('Reset code sent to your email!');
-    if (res.devCode) {
-      showAuthAlert(`🔑 Dev Reset Code: ${res.devCode}`, true);
-    }
+    // Reset code sent directly to user email
   } else {
     showAuthAlert(res.error || 'Failed to request reset code');
   }

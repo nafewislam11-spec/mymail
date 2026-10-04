@@ -577,7 +577,6 @@ app.post('/api/auth/signup', express.json(), async (req, res) => {
       success: true,
       requiresVerification: true,
       email: cleanEmail,
-      devCode: otpCode,
       message: 'Verification code sent to ' + cleanEmail
     });
   } catch (err) {
@@ -626,7 +625,6 @@ app.post('/api/auth/login', express.json(), async (req, res) => {
         success: true,
         requires2FA: true,
         email: cleanEmail,
-        devCode: otpCode,
         message: '2FA code sent to your email.'
       });
     }
@@ -726,7 +724,7 @@ app.post('/api/auth/resend-otp', express.json(), async (req, res) => {
       text: `Your new verification code is: ${otpCode}`
     });
 
-    res.json({ success: true, message: 'New code sent to ' + cleanEmail, devCode: otpCode });
+    res.json({ success: true, message: 'New code sent to ' + cleanEmail });
   } catch (err) {
     res.status(500).json({ error: 'Failed to resend code: ' + err.message });
   }
@@ -769,8 +767,7 @@ app.post('/api/auth/forgot-password', express.json(), async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Password reset code sent to your email.',
-      devCode: otpCode
+      message: 'Password reset code sent to your email.'
     });
   } catch (err) {
     res.status(500).json({ error: 'Forgot password error: ' + err.message });
